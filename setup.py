@@ -31,22 +31,10 @@ setup(
     },
     include_package_data=True,
     install_requires=[
-        "psutil",
-        "numpy",
-        "pillow",
-        "evalcache>=1.14.0",
-        'zenframe',
-        "requests",
-        "six",
+        'PyQt5',
+        'PyQt5-sip',
     ],
-    extras_require={
-        'gui': [
-            'PyQt5',
-            'PyQt5-sip',
-            "pyopengl"
-        ]
-    },
     entry_points={"console_scripts": [
-        "zencad=zencad.__main__:main"
+        "scicall=scicall.__main__:main"
     ]},
 )

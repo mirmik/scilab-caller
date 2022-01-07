@@ -1,0 +1,3 @@
+[console_scripts]
+scicall = scicall.__main__:main
+

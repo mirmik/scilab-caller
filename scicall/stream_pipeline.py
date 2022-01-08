@@ -61,6 +61,8 @@ class SourceBuilder:
 	def make_transport(self, pipeline, settings):
 		if settings.transport == TransportType.SRT:
 			self.make_srt_stream(pipeline, settings)
+		if settings.transport == TransportType.SRTREMOTE:
+			self.make_srt_remote_stream(pipeline, settings)
 		if settings.transport == TransportType.UDP:
 			self.make_udp_stream(pipeline, settings)
 		if settings.transport == TransportType.RTPUDP:
@@ -68,7 +70,15 @@ class SourceBuilder:
 
 	def make_srt_stream(self, pipeline, settings):
 		self.srtsrc = Gst.ElementFactory.make("srtsrc", None)
-		self.srtsrc.set_property('uri', "srt://:10020")
+		self.srtsrc.set_property('uri', f"srt://:{settings.port}")
+		self.srtsrc.set_property('wait-for-connection', False)
+		pipeline.add(self.srtsrc)
+		self.transport_sink = self.srtsrc
+		self.transport_src = self.srtsrc
+
+	def make_srt_remote_stream(self, pipeline, settings):
+		self.srtsrc = Gst.ElementFactory.make("srtsrc", None)
+		self.srtsrc.set_property('uri', f"srt://{settings.ip}:{settings.port}")
 		self.srtsrc.set_property('wait-for-connection', False)
 		pipeline.add(self.srtsrc)
 		self.transport_sink = self.srtsrc
@@ -76,7 +86,7 @@ class SourceBuilder:
 
 	def make_udp_stream(self, pipeline, settings):
 		self.udpsrc = Gst.ElementFactory.make("udpsrc", None)
-		self.udpsrc.set_property('port', 10020)
+		self.udpsrc.set_property('port', settings.port)
 		pipeline.add(self.udpsrc)
 		self.transport_sink = self.udpsrc
 		self.transport_src = self.udpsrc
@@ -88,7 +98,7 @@ class SourceBuilder:
 		self.capsfilter = Gst.ElementFactory.make('capsfilter', None)
 		self.capsfilter.set_property("caps", caps)
 		self.rtpjpegdepay = Gst.ElementFactory.make("rtpjpegdepay", None)
-		self.udpsrc.set_property('port', 10020)
+		self.udpsrc.set_property('port', settings.port)
 		pipeline.add(self.udpsrc)
 		pipeline.add(self.rtpjpegdepay)
 		pipeline.add(self.q)
@@ -109,7 +119,15 @@ class SourceBuilder:
 class TranslationBuilder:
 	def make_srt_stream(self, pipeline, settings):
 		self.srtsink = Gst.ElementFactory.make("srtsink", None)
-		self.srtsink.set_property('uri', "srt://192.168.1.240:10020")
+		self.srtsink.set_property('uri', f"srt://:{settings.port}")
+		self.srtsink.set_property('wait-for-connection', False)
+		pipeline.add(self.srtsink)
+		self.transport_sink = self.srtsink
+		self.transport_src = self.srtsink
+
+	def make_srt_remote_stream(self, pipeline, settings):
+		self.srtsink = Gst.ElementFactory.make("srtsink", None)
+		self.srtsink.set_property('uri', f"srt://{settings.ip}:{settings.port}")
 		self.srtsink.set_property('wait-for-connection', False)
 		pipeline.add(self.srtsink)
 		self.transport_sink = self.srtsink
@@ -148,6 +166,8 @@ class TranslationBuilder:
 	def make_transport(self, pipeline, settings):
 		if settings.transport == TransportType.SRT:
 			self.make_srt_stream(pipeline, settings)
+		if settings.transport == TransportType.SRTREMOTE:
+			self.make_srt_remote_stream(pipeline, settings)
 		if settings.transport == TransportType.UDP:
 			self.make_udp_stream(pipeline, settings)
 		if settings.transport == TransportType.RTPUDP:

@@ -51,6 +51,7 @@ class SourceControlPanel(CommonControlPanel):
 		self.codec_label = QLabel("Кодек:")
 		self.target_ip.setText("127.0.0.1")
 		self.target_port.setText("10020")
+		self.transport_list.currentTextChanged.connect(self.mode_changed)
 
 		items = [
 			self.device_list,
@@ -88,14 +89,20 @@ class SourceControlPanel(CommonControlPanel):
 			for el in [
 				self.transport_list,
 				self.codec_list,
-				self.target_ip,
 				self.target_port,
-				self.target_ip_label,
 				self.target_port_label,
 				self.codec_label,
 				self.transport_label
 			]:
 				el.setHidden(False)
+
+			if self.transport_list.currentText() in [TransportType.SRTREMOTE]:
+				for el in [
+					self.target_ip,
+					self.target_ip_label,
+				]:
+					el.setHidden(False)
+
 
 	def set_devices_list(self, cameras):
 		self.device_list.addItems(cameras)
@@ -113,7 +120,7 @@ class SourceControlPanel(CommonControlPanel):
 			transport=transport,
 			codec=codec,
 			ip=ip,
-			port=port)
+			port=int(port))
 
 class TranslationControlPanel(CommonControlPanel):
 	def __init__(self):
@@ -125,6 +132,7 @@ class TranslationControlPanel(CommonControlPanel):
 		self.codec_label = QLabel("Кодек:")
 		self.transport_list.addItems(list(TransportType))
 		self.codec_list.addItems(list(CodecType))
+		self.transport_list.currentTextChanged.connect(self.mode_changed)
 
 		self.layout = QGridLayout()
 		self.target_ip_label = QLabel("IP:")
@@ -173,6 +181,13 @@ class TranslationControlPanel(CommonControlPanel):
 			]:
 				el.setHidden(False)
 
+			if self.transport_list.currentText() in [TransportType.SRT]:
+				for el in [
+					self.target_ip,
+					self.target_ip_label,
+				]:
+					el.setHidden(True)
+
 	def settings(self):
 		mode = self.mode_list.currentText()
 		transport = self.transport_list.currentText()
@@ -184,7 +199,7 @@ class TranslationControlPanel(CommonControlPanel):
 			transport=transport,
 			codec=codec,
 			ip=ip,
-			port=port)
+			port=int(port))
 
 class ControlPanel(QWidget):
 	def __init__(self):
@@ -212,7 +227,7 @@ class ControlPanel(QWidget):
 		self.layout2.addStretch()
 		self.setLayout(self.layout2)
 
-		self.setFixedWidth(240)
+		self.setFixedWidth(250)
 
 	def set_cameras_list(self, cameras):
 		self.input_control_panel.set_devices_list(cameras)

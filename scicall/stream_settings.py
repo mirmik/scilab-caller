@@ -11,7 +11,8 @@ class TranslateMode(str, Enum):
 	STREAM = "Поток"
 
 class TransportType(str, Enum):
-	SRT = "srt" 
+	SRT = "srt(listen)" 
+	SRTREMOTE = "srt(remote)" 
 	UDP = "udp" 
 	RTPUDP = "rtp/udp"
 

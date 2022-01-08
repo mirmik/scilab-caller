@@ -255,7 +255,6 @@ class StreamPipeline:
 		self.pipeline.set_state(Gst.State.PLAYING)
 		
 	def on_sync_message(self, bus, msg):
-		print("on_sync_message")
 		if msg.get_structure().get_name() == 'prepare-window-handle':
 			self.display_widget.connect_to_sink(msg.src)
 

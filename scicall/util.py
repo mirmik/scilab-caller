@@ -1,19 +1,34 @@
 import os
 import sys
+from gi.repository import GObject, Gst, GstVideo
+from scicall.stream_settings import MediaType
 
-def get_cameras_list_windows():
+def get_video_captures_list_windows():
 	candidates = [ "1", "2" ]
 	return sorted(candidates)
 
-def get_cameras_list_linux():
-	names = [ os.path.join("/dev", i) for i in os.listdir("/dev") ]
-	candidates = [ i for i in names if "video" in i ]
-	return sorted(candidates)
+def get_video_captures_list_linux():
+	monitor = Gst.DeviceMonitor()
+	monitor.start()
+	devs = monitor.get_devices()
+	video_devs = [ dev for dev in devs if dev.get_device_class() == "Video/Source" ]
+	monitor.stop()
+	pathes = [ dev.get_properties().get_string("device.path") for dev in video_devs ]
+	return sorted(pathes)
 
-def get_cameras_list():
+def get_video_captures_list():
 	if sys.platform == 'linux':
-		return get_cameras_list_linux()
+		return get_video_captures_list_linux()
 	elif sys.platform == 'win32':
-		return get_cameras_list_windows()
+		return get_video_captures_list_windows()
 	else:
 		raise Exception("unsupported platform")
+
+def get_audio_captures_list():
+	return ["1", "2", "3"]
+
+def get_devices_list(mediatype):
+	if mediatype == MediaType.VIDEO:
+		return get_video_captures_list()
+	elif mediatype == MediaType.AUDIO:
+		return get_audio_captures_list()

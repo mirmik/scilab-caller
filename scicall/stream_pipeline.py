@@ -4,7 +4,74 @@ from gi.repository import GObject, Gst, GstVideo
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
-from scicall.stream_settings import SourceMode, TranslateMode, CodecType, TransportType
+from scicall.stream_settings import (
+	SourceMode, 
+	TranslateMode, 
+	VideoCodecType, 
+	AudioCodecType, 
+	TransportType,
+	MediaType
+)
+
+class SourceTransportBuilder:
+	def make(self, pipeline, settings):
+		builders = {
+			TransportType.SRT: self.srt,
+			TransportType.SRTREMOTE: self.srt_remote,
+			TransportType.UDP: self.udp,
+			TransportType.RTPUDP: self.rtpudp
+		}
+		return builders[settings.transport](pipeline, settings)
+		
+	def srt(self, pipeline, settings):
+		srtsrc = Gst.ElementFactory.make("srtsrc", None)
+		srtsrc.set_property('uri', f"srt://:{settings.port}")
+		srtsrc.set_property('wait-for-connection', False)
+		pipeline.add(srtsrc)
+		return (srtsrc, srtsrc)
+
+	def srt_remote(self, pipeline, settings):
+		srtsrc = Gst.ElementFactory.make("srtsrc", None)
+		srtsrc.set_property('uri', f"srt://{settings.ip}:{settings.port}")
+		srtsrc.set_property('wait-for-connection', False)
+		pipeline.add(srtsrc)
+		return (srtsrc, srtsrc)
+
+	def udp(self, pipeline, settings):
+		udpsrc = Gst.ElementFactory.make("udpsrc", None)
+		udpsrc.set_property('port', settings.port)
+		pipeline.add(udpsrc)
+		return (udpsrc, udpsrc)
+
+	def rtpudp(self, pipeline, settings):
+		udpsrc = Gst.ElementFactory.make("udpsrc", None)
+		q = Gst.ElementFactory.make("queue", None)
+		caps = Gst.Caps.from_string("application/x-rtp, encoding-name=JPEG,payload=26")
+		capsfilter = Gst.ElementFactory.make('capsfilter', None)
+		capsfilter.set_property("caps", caps)
+		rtpjpegdepay = Gst.ElementFactory.make("rtpjpegdepay", None)
+		udpsrc.set_property('port', settings.port)
+		pipeline.add(udpsrc)
+		pipeline.add(rtpjpegdepay)
+		pipeline.add(q)
+		pipeline.add(capsfilter)
+		udpsrc.link(capsfilter)
+		capsfilter.link(rtpjpegdepay)
+		rtpjpegdepay.link(q)
+		return (q, udpsrc)
+
+class SourceCodecBuilder:
+	def make(self, pipeline, settings):
+		if settings.codec == VideoCodecType.MJPEG:
+			return self.mjpeg_codec(pipeline, settings)		
+
+	def mjpeg_codec(self, pipeline, settings):
+		jpegparse = Gst.ElementFactory.make("jpegparse", None)
+		jpegdec = Gst.ElementFactory.make("jpegdec", None)
+		pipeline.add(jpegparse)
+		pipeline.add(jpegdec)
+		jpegparse.link(jpegdec)
+		return (jpegparse, jpegdec)
 
 class SourceBuilder:
 	def __init__(self):
@@ -13,190 +80,126 @@ class SourceBuilder:
 		self.framerate = 30
 
 	def make(self, pipeline, settings):
-		if settings.mode == SourceMode.TEST:
-			self.source = Gst.ElementFactory.make("videotestsrc", "source")
-			pipeline.add(self.source)
-			self.sinklink = self.source
-		elif settings.mode == SourceMode.CAMERA:
-			self.source = self.make_videocam_source(pipeline, settings)
-			self.capsfilter = self.source_capsfilter = self.make_source_capsfilter()
-			pipeline.add(self.source)
-			pipeline.add(self.capsfilter)
-			self.source.link(self.capsfilter)
-			self.sinklink = self.capsfilter
-		elif settings.mode == SourceMode.STREAM:
-			self.make_stream_source(pipeline, settings)
+		builders = {
+			SourceMode.TEST: self.test,
+			SourceMode.CAPTURE: self.capture,
+			SourceMode.STREAM: self.stream,
+		}
+		return builders[settings.mode](pipeline, settings)
 
-	def make_stream_source(self, pipeline, settings):
-		self.make_transport(pipeline, settings)
-		self.make_codec(pipeline, settings)
-		self.transport_sink.link(self.codec_src)
-		self.sinklink = self.codec_sink
-		self.srclink = self.transport_src
-
-	def make_videocam_source(self, pipeline, settings):
+	def test(self, pipeline, settings):
+		source = Gst.ElementFactory.make({ 
+			MediaType.VIDEO: "videotestsrc", 
+			MediaType.AUDIO: "audiotestsrc"
+		}[settings.mediatype], None)
+		pipeline.add(source)
+		return source, source
+	
+	def stream(self, pipeline, settings):
+		trans_src, trans_sink = SourceTransportBuilder().make(pipeline, settings)
+		codec_src, codec_sink = SourceCodecBuilder().make(pipeline, settings)
+		trans_sink.link(codec_src)
+		return trans_src, codec_sink
+		
+	def capture(self, pipeline, settings):
 		if sys.platform == "linux":
 			source = Gst.ElementFactory.make("v4l2src", "source")
 			source.set_property("device", settings.device)
-			return source
+			pipeline.add(source)
+			return source, source
 		elif sys.platform == "win32":
 			source = Gst.ElementFactory.make("ksvideosrc", "source")
-			return source
+			pipeline.add(source)
+			return source, source
 		else:
 			raise Extension("platform is not supported")
 
-	def make_mjpeg_codec(self, pipeline, settings):
-		self.jpegparse = Gst.ElementFactory.make("jpegparse", None)
-		self.jpegdec = Gst.ElementFactory.make("jpegdec", None)
-		pipeline.add(self.jpegparse)
-		pipeline.add(self.jpegdec)
-		self.jpegparse.link(self.jpegdec)
-		self.codec_sink = self.jpegdec
-		self.codec_src = self.jpegparse
+	#def make_source_capsfilter(self):
+	#	caps = Gst.Caps.from_string(
+	#		f'video/x-raw,width={self.video_width},height={self.video_height},framerate={self.framerate}/1') 
+	#	capsfilter = Gst.ElementFactory.make('capsfilter', None)
+	#	capsfilter.set_property("caps", caps)
+	#	return capsfilter
 
-	def make_codec(self, pipeline, settings):
-		if settings.codec == CodecType.MJPEG:
-			self.make_mjpeg_codec(pipeline, settings)		
+class TranslationTransportBuilder:
+	def make(self, pipeline, settings):
+		builders = {
+			TransportType.SRT: self.srt,
+			TransportType.SRTREMOTE: self.srt_remote,
+			TransportType.UDP: self.udp,
+			TransportType.RTPUDP: self.rtpudp
+		}
+		return builders[settings.transport](pipeline, settings)
 
-	def make_transport(self, pipeline, settings):
-		if settings.transport == TransportType.SRT:
-			self.make_srt_stream(pipeline, settings)
-		if settings.transport == TransportType.SRTREMOTE:
-			self.make_srt_remote_stream(pipeline, settings)
-		if settings.transport == TransportType.UDP:
-			self.make_udp_stream(pipeline, settings)
-		if settings.transport == TransportType.RTPUDP:
-			self.make_rtpudp_stream(pipeline, settings)
+	def srt(self, pipeline, settings):
+		srtsink = Gst.ElementFactory.make("srtsink", None)
+		srtsink.set_property('uri', f"srt://:{settings.port}")
+		srtsink.set_property('wait-for-connection', False)
+		pipeline.add(srtsink)
+		return srtsink, srtsink
+		
+	def srt_remote(self, pipeline, settings):
+		srtsink = Gst.ElementFactory.make("srtsink", None)
+		srtsink.set_property('uri', f"srt://{settings.ip}:{settings.port}")
+		srtsink.set_property('wait-for-connection', False)
+		pipeline.add(srtsink)
+		return srtsink, srtsink
 
-	def make_srt_stream(self, pipeline, settings):
-		self.srtsrc = Gst.ElementFactory.make("srtsrc", None)
-		self.srtsrc.set_property('uri', f"srt://:{settings.port}")
-		self.srtsrc.set_property('wait-for-connection', False)
-		pipeline.add(self.srtsrc)
-		self.transport_sink = self.srtsrc
-		self.transport_src = self.srtsrc
+	def udp(self, pipeline, settings):
+		udpsink = Gst.ElementFactory.make("udpsink", None)
+		udpsink.set_property('port', settings.port)
+		udpsink.set_property('host', settings.ip)
+		pipeline.add(udpsink)
+		return udpsink, udpsink
 
-	def make_srt_remote_stream(self, pipeline, settings):
-		self.srtsrc = Gst.ElementFactory.make("srtsrc", None)
-		self.srtsrc.set_property('uri', f"srt://{settings.ip}:{settings.port}")
-		self.srtsrc.set_property('wait-for-connection', False)
-		pipeline.add(self.srtsrc)
-		self.transport_sink = self.srtsrc
-		self.transport_src = self.srtsrc
+	def rtpudp(self, pipeline, settings):
+		udpsink = Gst.ElementFactory.make("udpsink", None)
+		udpsink.set_property('port', settings.port)
+		udpsink.set_property('host', settings.ip)
+		rtpjpegpay = Gst.ElementFactory.make("rtpjpegpay", None)
+		pipeline.add(udpsink)
+		pipeline.add(rtpjpegpay)
+		rtpjpegpay.link(udpsink)
+		return rtpjpegpay, udpsink
 
-	def make_udp_stream(self, pipeline, settings):
-		self.udpsrc = Gst.ElementFactory.make("udpsrc", None)
-		self.udpsrc.set_property('port', settings.port)
-		pipeline.add(self.udpsrc)
-		self.transport_sink = self.udpsrc
-		self.transport_src = self.udpsrc
 
-	def make_rtpudp_stream(self, pipeline, settings):
-		self.udpsrc = Gst.ElementFactory.make("udpsrc", None)
-		self.q = Gst.ElementFactory.make("queue", None)
-		caps = Gst.Caps.from_string("application/x-rtp, encoding-name=JPEG,payload=26")
-		self.capsfilter = Gst.ElementFactory.make('capsfilter', None)
-		self.capsfilter.set_property("caps", caps)
-		self.rtpjpegdepay = Gst.ElementFactory.make("rtpjpegdepay", None)
-		self.udpsrc.set_property('port', settings.port)
-		pipeline.add(self.udpsrc)
-		pipeline.add(self.rtpjpegdepay)
-		pipeline.add(self.q)
-		pipeline.add(self.capsfilter)
-		self.udpsrc.link(self.capsfilter)
-		self.capsfilter.link(self.rtpjpegdepay)
-		self.rtpjpegdepay.link(self.q)
-		self.transport_sink = self.q
-		self.transport_src = self.udpsrc
+class TranslateCodecBuilder:
+	def make(self, pipeline, settings):
+		if settings.codec == VideoCodecType.MJPEG:
+			return self.mjpeg_codec(pipeline, settings)		
 
-	def make_source_capsfilter(self):
-		caps = Gst.Caps.from_string(
-			f'video/x-raw,width={self.video_width},height={self.video_height},framerate={self.framerate}/1') 
-		capsfilter = Gst.ElementFactory.make('capsfilter', None)
-		capsfilter.set_property("caps", caps)
-		return capsfilter
+	def mjpeg_codec(self, pipeline, settings):
+		jpegenc = Gst.ElementFactory.make("jpegenc", None)
+		jpegenc.set_property('quality', 50)
+		pipeline.add(jpegenc)
+		return (jpegenc, jpegenc)
 
 class TranslationBuilder:
-	def make_srt_stream(self, pipeline, settings):
-		self.srtsink = Gst.ElementFactory.make("srtsink", None)
-		self.srtsink.set_property('uri', f"srt://:{settings.port}")
-		self.srtsink.set_property('wait-for-connection', False)
-		pipeline.add(self.srtsink)
-		self.transport_sink = self.srtsink
-		self.transport_src = self.srtsink
-
-	def make_srt_remote_stream(self, pipeline, settings):
-		self.srtsink = Gst.ElementFactory.make("srtsink", None)
-		self.srtsink.set_property('uri', f"srt://{settings.ip}:{settings.port}")
-		self.srtsink.set_property('wait-for-connection', False)
-		pipeline.add(self.srtsink)
-		self.transport_sink = self.srtsink
-		self.transport_src = self.srtsink
-
-	def make_udp_stream(self, pipeline, settings):
-		self.udpsink = Gst.ElementFactory.make("udpsink", None)
-		self.udpsink.set_property('port', 10020)
-		self.udpsink.set_property('host', "127.0.0.1")
-		pipeline.add(self.udpsink)
-		self.transport_sink = self.udpsink
-		self.transport_src = self.udpsink
-
-	def make_rtpudp_stream(self, pipeline, settings):
-		self.udpsink = Gst.ElementFactory.make("udpsink", None)
-		self.udpsink.set_property('port', 10020)
-		self.udpsink.set_property('host', "127.0.0.1")
-		self.rtpjpegpay = Gst.ElementFactory.make("rtpjpegpay", None)
-		pipeline.add(self.udpsink)
-		pipeline.add(self.rtpjpegpay)
-		self.rtpjpegpay.link(self.udpsink)
-		self.transport_sink = self.udpsink
-		self.transport_src = self.rtpjpegpay
-
-	def make_mjpeg_codec(self, pipeline, settings):
-		self.jpegenc = Gst.ElementFactory.make("jpegenc", None)
-		self.jpegenc.set_property('quality', 50)
-		pipeline.add(self.jpegenc)
-		self.codec_sink = self.jpegenc
-		self.codec_src = self.jpegenc
-
-	def make_codec(self, pipeline, settings):
-		if settings.codec == CodecType.MJPEG:
-			self.make_mjpeg_codec(pipeline, settings)		
-
-	def make_transport(self, pipeline, settings):
-		if settings.transport == TransportType.SRT:
-			self.make_srt_stream(pipeline, settings)
-		if settings.transport == TransportType.SRTREMOTE:
-			self.make_srt_remote_stream(pipeline, settings)
-		if settings.transport == TransportType.UDP:
-			self.make_udp_stream(pipeline, settings)
-		if settings.transport == TransportType.RTPUDP:
-			self.make_rtpudp_stream(pipeline, settings)
-
-	def make_stream(self, pipeline, settings):
-		self.make_codec(pipeline, settings)
-		self.make_transport(pipeline, settings)
-		self.codec_sink.link(self.transport_src)
-		self.sinklink = self.transport_sink
-		self.srclink = self.codec_src
-		
 	def make(self, pipeline, settings):
-		if settings.mode == TranslateMode.NOTRANS:
-			self.srclink = Gst.ElementFactory.make("fakesink", None)
-			pipeline.add(self.srclink)
-			return
+		builders = {
+			TranslateMode.NOTRANS: self.fake,
+			TranslateMode.STATION: self.station,
+			TranslateMode.STREAM: self.stream,
+		}
+		return builders[settings.mode](pipeline, settings)
 
-		elif settings.mode == TranslateMode.STREAM:
-			self.make_stream(pipeline, settings)
+	def fake(self, pipeline, settings): 
+		fakesink = Gst.ElementFactory.make("fakesink", None)
+		pipeline.add(fakesink)
+		return fakesink, fakesink
 
-		elif settings.mode == TranslateMode.STATION:
-			msgBox = QMessageBox()
-			msgBox.setWindowTitle("Неоконченное строительство");
-			msgBox.setText("Режим автоматического согласования портов в разработке.");
-			msgBox.exec();
-			self.srclink = Gst.ElementFactory.make("fakesink", None)
-			pipeline.add(self.srclink)
-			return	
+	def stream(self, pipeline, settings):
+		codec_src, codec_sink = TranslateCodecBuilder().make(pipeline, settings)
+		trans_src, trans_sink = TranslationTransportBuilder().make(pipeline, settings)
+		codec_sink.link(trans_src)
+		return codec_src, trans_sink
+
+	def station(self, pipeline, settings):
+		msgBox = QMessageBox()
+		msgBox.setWindowTitle("Неоконченное строительство");
+		msgBox.setText("Режим автоматического согласования портов в разработке.");
+		msgBox.exec();
+		return self.fake()
 
 class StreamPipeline:
 	def __init__(self, display_widget):
@@ -205,51 +208,82 @@ class StreamPipeline:
 		self.sink_width = 320
 		display_widget.setFixedWidth(self.sink_width)
 
-	def make_feedback_capsfilter(self):
+	def make_video_feedback_capsfilter(self):
 		caps = Gst.Caps.from_string(f"video/x-raw,width={self.sink_width},height={240}") 
 		capsfilter = Gst.ElementFactory.make('capsfilter', None)
 		capsfilter.set_property("caps", caps)
 		return capsfilter
 
+	def make_audio_pipeline(self, input_settings, translation_settings):
+		print("make_audio_pipeline")
+		tee = Gst.ElementFactory.make("tee", None)
+		sink = Gst.ElementFactory.make("autoaudiosink", None)
+		queue1 = Gst.ElementFactory.make("queue", "q1")
+		queue2 = Gst.ElementFactory.make("queue", "q2")
+		
+		self.pipeline.add(tee)
+		self.pipeline.add(sink)
+		self.pipeline.add(queue1)
+		self.pipeline.add(queue2)
+		
+		self.source_sink.link(tee)
+		tee.link(queue1)
+		
+		if self.output_src is not None:
+			tee.link(queue2)
+			queue2.link(self.output_src)
+
+		#if self.translation_builder.srclink is not None:
+		#	self.tee.link(self.queue2)
+		#	self.queue2.link(self.translation_builder.srclink)
+		queue1.link(sink)
+
+	def make_video_pipeline(self, input_settings, translation_settings):
+		tee = Gst.ElementFactory.make("tee", None)
+		videoscale = Gst.ElementFactory.make("videoscale", None)
+		videoconvert = Gst.ElementFactory.make("videoconvert", None)
+		sink = Gst.ElementFactory.make("autovideosink", None)
+		sink_capsfilter = self.make_video_feedback_capsfilter()
+
+		queue1 = Gst.ElementFactory.make("queue", "q1")
+		queue2 = Gst.ElementFactory.make("queue", "q2")
+
+		self.pipeline.add(tee)
+		self.pipeline.add(videoscale)
+		self.pipeline.add(videoconvert)
+		self.pipeline.add(sink_capsfilter)
+		self.pipeline.add(sink)
+		self.pipeline.add(queue1)
+		self.pipeline.add(queue2)
+
+		self.source_sink.link(tee)
+		tee.link(queue1)
+		queue1.link(videoscale)
+
+		if self.output_src is not None:
+			tee.link(queue2)
+			queue2.link(self.output_src)
+
+		videoscale.link(videoconvert)
+		videoconvert.link(sink_capsfilter)
+		sink_capsfilter.link(sink)
+
 	def make_pipeline(self, input_settings, translation_settings):
+		assert input_settings.mediatype == translation_settings.mediatype
+
 		self.last_input_settings = input_settings
 		self.last_translation_settings = translation_settings
 
 		self.pipeline = Gst.Pipeline()
-		self.source_builder = SourceBuilder()
-		self.translation_builder = TranslationBuilder()
+		srcsrc, srcsink = SourceBuilder().make(self.pipeline, input_settings)
+		outsrc, outsink = TranslationBuilder().make(self.pipeline, translation_settings)
+		self.source_sink = srcsink
+		self.output_src = outsrc
 
-		self.source_builder.make(self.pipeline, input_settings)
-		self.translation_builder.make(self.pipeline, translation_settings)
-
-		self.tee = Gst.ElementFactory.make("tee", None)
-		self.videoscale = Gst.ElementFactory.make("videoscale", None)
-		self.videoconvert = Gst.ElementFactory.make("videoconvert", None)
-		self.sink = Gst.ElementFactory.make("autovideosink", None)
-		self.sink_capsfilter = self.make_feedback_capsfilter()
-
-		self.queue1 = Gst.ElementFactory.make("queue", "q1")
-		self.queue2 = Gst.ElementFactory.make("queue", "q2")
-
-		self.pipeline.add(self.tee)
-		self.pipeline.add(self.videoscale)
-		self.pipeline.add(self.videoconvert)
-		self.pipeline.add(self.sink_capsfilter)
-		self.pipeline.add(self.sink)
-		self.pipeline.add(self.queue1)
-		self.pipeline.add(self.queue2)
-
-		self.source_builder.sinklink.link(self.tee)
-		self.tee.link(self.queue1)
-		self.queue1.link(self.videoscale)
-
-		if self.translation_builder.srclink is not None:
-			self.tee.link(self.queue2)
-			self.queue2.link(self.translation_builder.srclink)
-
-		self.videoscale.link(self.videoconvert)
-		self.videoconvert.link(self.sink_capsfilter)
-		self.sink_capsfilter.link(self.sink)
+		if input_settings.mediatype == MediaType.VIDEO:
+			return self.make_video_pipeline(input_settings, translation_settings)
+		elif input_settings.mediatype == MediaType.AUDIO:
+			return self.make_audio_pipeline(input_settings, translation_settings)
 
 	def runned(self):
 		return self.pipeline is not None

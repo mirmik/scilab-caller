@@ -6,14 +6,15 @@ gi.require_version('GstVideo', '1.0')
 from gi.repository import GObject, Gst, GstVideo
 
 import sys
+from enum import Enum
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 
 from scicall.control_panel import ControlPanel
 from scicall.stream_pipeline import StreamPipeline
-from scicall.util import get_cameras_list
-from scicall.stream_settings import SourceMode, TranslateMode
+from scicall.util import get_devices_list
+from scicall.stream_settings import SourceMode, TranslateMode, MediaType
 
 class GstreamerDisplay(QWidget):
 	def __init__(self):
@@ -29,30 +30,24 @@ class GstreamerDisplay(QWidget):
 
 
 class WorkZone(QWidget):
-	def __init__(self):
+	def __init__(self, mediatype):
 		super().__init__()
-		self.display = GstreamerDisplay()
-		self.control_panel = ControlPanel()
+
+		if mediatype == MediaType.VIDEO: 
+			self.display = GstreamerDisplay()
+		else:
+			self.display = QLabel("TODO: Монитор звукового ряда")	
+
+		self.control_panel = ControlPanel(mediatype)
 		self.pipeline = StreamPipeline(self.display)
 		self.main_layout = QHBoxLayout()
 		self.main_layout.addWidget(self.display)
 		self.main_layout.addWidget(self.control_panel)
 		self.setLayout(self.main_layout)
-
 		self.control_panel.enable_disable_button.clicked.connect(self.enable_disable_clicked)
 
-		cameras = get_cameras_list()
-		self.pipeline.source_text = cameras[0]
-		self.control_panel.set_cameras_list(cameras)
-
-	def source_type_changed(self, text):
-		if text == "Test":
-			self.pipeline.source_mode = SourceMode.TEST
-		elif text == "Camera":
-			self.pipeline.source_mode = SourceMode.CAMERA
-
-	def source_changed(self, text):
-		self.pipeline.source_text = text
+		captures = get_devices_list(mediatype)
+		self.control_panel.set_devices_list(captures)
 		
 	def enable_disable_clicked(self):
 		if self.pipeline.runned():
@@ -80,9 +75,14 @@ class MultiWorkZone(QWidget):
 		self.setLayout(self.layout)
 
 	def add_zone(self):
-		zone = WorkZone()
-		self.zones.append(zone)
-		self.layout.addWidget(zone)
+		zone_video = WorkZone(MediaType.VIDEO)
+		zone_audio = WorkZone(MediaType.AUDIO)
+		peer_layout = QVBoxLayout()
+		peer_layout.addWidget(zone_video)
+		peer_layout.addWidget(zone_audio)
+		self.zones.append(zone_video)
+		self.zones.append(zone_audio)
+		self.layout.addLayout(peer_layout)
 
 class MainWindow(QMainWindow):
 	def __init__(self):
@@ -95,6 +95,9 @@ class MainWindow(QMainWindow):
 
 def main():
 	Gst.init(sys.argv)
+
+	#devices_analyze()
+
 	app = QApplication(sys.argv)
 	window = MainWindow()
 	#window.workzone.setup_pipeline()

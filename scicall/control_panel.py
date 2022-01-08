@@ -2,17 +2,19 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from scicall.stream_settings import (
-	SourceStreamSettings, 
-	TranslationStreamSettings, 
+	StreamSettings, 
 	SourceMode, 
+	MediaType,
 	TranslateMode,
 	TransportType,
-	CodecType
+	VideoCodecType,
+	AudioCodecType
 )
 
 class CommonControlPanel(QWidget):
-	def __init__(self, modeenum, other_items):
+	def __init__(self, modeenum, other_items, mediatype):
 		super().__init__()
+		self.mediatype = mediatype
 		self.mode_list = QComboBox()
 		self.mode_list.addItems(list(modeenum))
 		self.mode_list.currentTextChanged.connect(self.mode_changed)
@@ -34,14 +36,20 @@ class CommonControlPanel(QWidget):
 		for item in self.items:
 			item.setEnabled(True)	
 
+	def media_codec_list(self, mediatype):
+		if mediatype == MediaType.VIDEO:
+			return list(VideoCodecType)
+		elif mediatype == MediaType.AUDIO:
+			return list(AudioCodecType)
+
 
 class SourceControlPanel(CommonControlPanel):
-	def __init__(self):
+	def __init__(self, mediatype):
 		self.device_list = QComboBox()
 		self.transport_list = QComboBox()
 		self.codec_list = QComboBox()
 		self.transport_list.addItems(list(TransportType))
-		self.codec_list.addItems(list(CodecType))
+		self.codec_list.addItems(self.media_codec_list(mediatype))
 		self.target_ip = QLineEdit()
 		self.target_port = QLineEdit()
 		self.layout = QGridLayout()
@@ -65,7 +73,7 @@ class SourceControlPanel(CommonControlPanel):
 			self.transport_label,
 		]
 
-		super().__init__(SourceMode, items)
+		super().__init__(SourceMode, items, mediatype)
 		self.layout.addWidget(self.mode_list, 0,0,1,2)
 		self.layout.addWidget(self.device_list, 1,0,1,2)
 		self.layout.addWidget(self.transport_list, 2,1)
@@ -83,7 +91,7 @@ class SourceControlPanel(CommonControlPanel):
 		self.mode_list.setHidden(False)
 		if mode == SourceMode.TEST:
 			pass
-		elif mode == SourceMode.CAMERA:
+		elif mode == SourceMode.CAPTURE:
 			self.device_list.setHidden(False)
 		elif mode == SourceMode.STREAM:
 			for el in [
@@ -114,16 +122,17 @@ class SourceControlPanel(CommonControlPanel):
 		codec = self.codec_list.currentText()
 		ip = self.target_ip.text()
 		port = self.target_port.text()
-		return SourceStreamSettings(
+		return StreamSettings(
 			mode=mode, 
 			device=device,
 			transport=transport,
 			codec=codec,
 			ip=ip,
-			port=int(port))
+			port=int(port),
+			mediatype=self.mediatype)
 
 class TranslationControlPanel(CommonControlPanel):
-	def __init__(self):
+	def __init__(self, mediatype):
 		self.transport_list = QComboBox()
 		self.codec_list = QComboBox()
 		self.target_ip = QLineEdit()
@@ -131,7 +140,7 @@ class TranslationControlPanel(CommonControlPanel):
 		self.transport_label = QLabel("Транспорт:")
 		self.codec_label = QLabel("Кодек:")
 		self.transport_list.addItems(list(TransportType))
-		self.codec_list.addItems(list(CodecType))
+		self.codec_list.addItems(self.media_codec_list(mediatype))
 		self.transport_list.currentTextChanged.connect(self.mode_changed)
 
 		self.layout = QGridLayout()
@@ -151,7 +160,7 @@ class TranslationControlPanel(CommonControlPanel):
 			self.transport_label
 		]
 
-		super().__init__(TranslateMode, items)
+		super().__init__(TranslateMode, items, mediatype)
 		self.layout.addWidget(self.mode_list, 0, 0, 1, 2)
 		self.layout.addWidget(self.transport_label, 1,0)
 		self.layout.addWidget(self.transport_list, 1, 1)
@@ -194,26 +203,30 @@ class TranslationControlPanel(CommonControlPanel):
 		codec = self.codec_list.currentText()
 		ip = self.target_ip.text()
 		port = self.target_port.text()
-		return TranslationStreamSettings(
+		return StreamSettings(
 			mode=mode, 
 			transport=transport,
 			codec=codec,
 			ip=ip,
-			port=int(port))
+			port=int(port),
+			mediatype=self.mediatype)
 
 class ControlPanel(QWidget):
-	def __init__(self):
+	def __init__(self, mediatype):
 		super().__init__()
 		self.enable_disable_button = QPushButton('Enable/Disable')
 
-		self.input_control_panel = SourceControlPanel()
+		self.input_control_panel = SourceControlPanel(mediatype)
 		self.input_frame = QGroupBox()
-		self.input_frame.setTitle("Источник")
+		self.input_frame.setTitle({
+			MediaType.VIDEO : "Источник изображения",
+			MediaType.AUDIO : "Источник звука"
+		}[mediatype])
 		self.input_layout = QVBoxLayout()
 		self.input_layout.addWidget(self.input_control_panel)
 		self.input_frame.setLayout(self.input_layout)
 
-		self.translation_control_panel = TranslationControlPanel()
+		self.translation_control_panel = TranslationControlPanel(mediatype)
 		self.translation_frame = QGroupBox()
 		self.translation_frame.setTitle("Передача")
 		self.translation_layout = QVBoxLayout()
@@ -229,8 +242,8 @@ class ControlPanel(QWidget):
 
 		self.setFixedWidth(250)
 
-	def set_cameras_list(self, cameras):
-		self.input_control_panel.set_devices_list(cameras)
+	def set_devices_list(self, devices):
+		self.input_control_panel.set_devices_list(devices)
 
 	def freeze(self):
 		self.input_control_panel.freeze()

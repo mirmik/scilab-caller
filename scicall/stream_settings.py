@@ -1,7 +1,11 @@
 from enum import Enum
 
+class MediaType(Enum):
+	VIDEO = 0,
+	AUDIO = 1
+
 class SourceMode(str, Enum):
-	CAMERA = "Камера"
+	CAPTURE = "Захват"
 	TEST = "Тестовый источник"
 	STREAM = "Входной поток"
 
@@ -11,22 +15,26 @@ class TranslateMode(str, Enum):
 	STREAM = "Поток"
 
 class TransportType(str, Enum):
-	SRT = "srt(listen)" 
-	SRTREMOTE = "srt(remote)" 
+	SRTREMOTE = "srt(client)" 
+	SRT = "srt(server)" 
 	UDP = "udp" 
 	RTPUDP = "rtp/udp"
 
-class CodecType(str, Enum):
+class VideoCodecType(str, Enum):
 	MJPEG = "mjpeg"
 
-class SourceStreamSettings:
+class AudioCodecType(str, Enum):
+	HZ = "hz"
+
+class StreamSettings:
 	def __init__(self, 
 		mode, 
 		device=None, 
 		transport=None, 
 		codec=None,
 		ip=None, 
-		port=None 
+		port=None,
+		mediatype=None 
 	):
 		self.mode = mode
 		self.device = device
@@ -34,17 +42,4 @@ class SourceStreamSettings:
 		self.codec = codec
 		self.ip = ip
 		self.port = port
-
-class TranslationStreamSettings:
-	def __init__(self, 
-		mode, 
-		transport=None, 
-		codec=None,
-		ip=None, 
-		port=None 
-	):
-		self.mode = mode
-		self.transport = transport
-		self.codec = codec
-		self.ip = ip
-		self.port = port
+		self.mediatype = mediatype

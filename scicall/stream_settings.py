@@ -24,9 +24,13 @@ class VideoCodecType(str, Enum):
 	MJPEG = "mjpeg"
 
 class AudioCodecType(str, Enum):
-	HZ = "hz"
+	OPUS = "opus"
 
 class StreamSettings:
+	""" В объекте содержаться все возможные поля состаяний. 
+	    Строители разберуться, что из этого имеет значение. 
+	"""
+
 	def __init__(self, 
 		mode, 
 		device=None, 

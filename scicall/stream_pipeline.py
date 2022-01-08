@@ -13,67 +13,16 @@ from scicall.stream_settings import (
 	MediaType
 )
 
-class SourceTransportBuilder:
-	def make(self, pipeline, settings):
-		builders = {
-			TransportType.SRT: self.srt,
-			TransportType.SRTREMOTE: self.srt_remote,
-			TransportType.UDP: self.udp,
-			TransportType.RTPUDP: self.rtpudp
-		}
-		return builders[settings.transport](pipeline, settings)
-		
-	def srt(self, pipeline, settings):
-		srtsrc = Gst.ElementFactory.make("srtsrc", None)
-		srtsrc.set_property('uri', f"srt://:{settings.port}")
-		srtsrc.set_property('wait-for-connection', False)
-		pipeline.add(srtsrc)
-		return (srtsrc, srtsrc)
+from scicall.stream_transport import SourceTransportBuilder, TranslationTransportBuilder
+from scicall.stream_codec import SourceCodecBuilder, TranslationCodecBuilder
 
-	def srt_remote(self, pipeline, settings):
-		srtsrc = Gst.ElementFactory.make("srtsrc", None)
-		srtsrc.set_property('uri', f"srt://{settings.ip}:{settings.port}")
-		srtsrc.set_property('wait-for-connection', False)
-		pipeline.add(srtsrc)
-		return (srtsrc, srtsrc)
-
-	def udp(self, pipeline, settings):
-		udpsrc = Gst.ElementFactory.make("udpsrc", None)
-		udpsrc.set_property('port', settings.port)
-		pipeline.add(udpsrc)
-		return (udpsrc, udpsrc)
-
-	def rtpudp(self, pipeline, settings):
-		udpsrc = Gst.ElementFactory.make("udpsrc", None)
-		q = Gst.ElementFactory.make("queue", None)
-		caps = Gst.Caps.from_string("application/x-rtp, encoding-name=JPEG,payload=26")
-		capsfilter = Gst.ElementFactory.make('capsfilter', None)
-		capsfilter.set_property("caps", caps)
-		rtpjpegdepay = Gst.ElementFactory.make("rtpjpegdepay", None)
-		udpsrc.set_property('port', settings.port)
-		pipeline.add(udpsrc)
-		pipeline.add(rtpjpegdepay)
-		pipeline.add(q)
-		pipeline.add(capsfilter)
-		udpsrc.link(capsfilter)
-		capsfilter.link(rtpjpegdepay)
-		rtpjpegdepay.link(q)
-		return (q, udpsrc)
-
-class SourceCodecBuilder:
-	def make(self, pipeline, settings):
-		if settings.codec == VideoCodecType.MJPEG:
-			return self.mjpeg_codec(pipeline, settings)		
-
-	def mjpeg_codec(self, pipeline, settings):
-		jpegparse = Gst.ElementFactory.make("jpegparse", None)
-		jpegdec = Gst.ElementFactory.make("jpegdec", None)
-		pipeline.add(jpegparse)
-		pipeline.add(jpegdec)
-		jpegparse.link(jpegdec)
-		return (jpegparse, jpegdec)
 
 class SourceBuilder:
+	""" Строитель входного каскада. 
+		
+		В зависимости от типа @settings.mode, строит разные типы входных каскадов. 
+	"""
+
 	def __init__(self):
 		self.video_width = 640
 		self.video_height = 480
@@ -103,7 +52,10 @@ class SourceBuilder:
 		
 	def capture(self, pipeline, settings):
 		if sys.platform == "linux":
-			source = Gst.ElementFactory.make("v4l2src", "source")
+			source = Gst.ElementFactory.make({
+				MediaType.VIDEO : "v4l2src",
+				MediaType.AUDIO : "alsasrc"
+			}[settings.mediatype], None)
 			source.set_property("device", settings.device)
 			pipeline.add(source)
 			return source, source
@@ -121,60 +73,13 @@ class SourceBuilder:
 	#	capsfilter.set_property("caps", caps)
 	#	return capsfilter
 
-class TranslationTransportBuilder:
-	def make(self, pipeline, settings):
-		builders = {
-			TransportType.SRT: self.srt,
-			TransportType.SRTREMOTE: self.srt_remote,
-			TransportType.UDP: self.udp,
-			TransportType.RTPUDP: self.rtpudp
-		}
-		return builders[settings.transport](pipeline, settings)
 
-	def srt(self, pipeline, settings):
-		srtsink = Gst.ElementFactory.make("srtsink", None)
-		srtsink.set_property('uri', f"srt://:{settings.port}")
-		srtsink.set_property('wait-for-connection', False)
-		pipeline.add(srtsink)
-		return srtsink, srtsink
-		
-	def srt_remote(self, pipeline, settings):
-		srtsink = Gst.ElementFactory.make("srtsink", None)
-		srtsink.set_property('uri', f"srt://{settings.ip}:{settings.port}")
-		srtsink.set_property('wait-for-connection', False)
-		pipeline.add(srtsink)
-		return srtsink, srtsink
-
-	def udp(self, pipeline, settings):
-		udpsink = Gst.ElementFactory.make("udpsink", None)
-		udpsink.set_property('port', settings.port)
-		udpsink.set_property('host', settings.ip)
-		pipeline.add(udpsink)
-		return udpsink, udpsink
-
-	def rtpudp(self, pipeline, settings):
-		udpsink = Gst.ElementFactory.make("udpsink", None)
-		udpsink.set_property('port', settings.port)
-		udpsink.set_property('host', settings.ip)
-		rtpjpegpay = Gst.ElementFactory.make("rtpjpegpay", None)
-		pipeline.add(udpsink)
-		pipeline.add(rtpjpegpay)
-		rtpjpegpay.link(udpsink)
-		return rtpjpegpay, udpsink
-
-
-class TranslateCodecBuilder:
-	def make(self, pipeline, settings):
-		if settings.codec == VideoCodecType.MJPEG:
-			return self.mjpeg_codec(pipeline, settings)		
-
-	def mjpeg_codec(self, pipeline, settings):
-		jpegenc = Gst.ElementFactory.make("jpegenc", None)
-		jpegenc.set_property('quality', 50)
-		pipeline.add(jpegenc)
-		return (jpegenc, jpegenc)
 
 class TranslationBuilder:
+	""" Строитель выходного каскада. 
+		
+		В зависимости от типа @settings.mode, строит разные типы выходных каскадов. 
+	"""
 	def make(self, pipeline, settings):
 		builders = {
 			TranslateMode.NOTRANS: self.fake,
@@ -189,7 +94,7 @@ class TranslationBuilder:
 		return fakesink, fakesink
 
 	def stream(self, pipeline, settings):
-		codec_src, codec_sink = TranslateCodecBuilder().make(pipeline, settings)
+		codec_src, codec_sink = TranslationCodecBuilder().make(pipeline, settings)
 		trans_src, trans_sink = TranslationTransportBuilder().make(pipeline, settings)
 		codec_sink.link(trans_src)
 		return codec_src, trans_sink
@@ -202,6 +107,13 @@ class TranslationBuilder:
 		return self.fake()
 
 class StreamPipeline:
+	"""Класс отвечает за строительство работы каскада gstreamer и инкапсулирует
+		логику работы с ним.
+
+		NB: Помимо объектов данного класса и подчинённых им объектов, 
+		работа с конвеером и элементами ковеера не должна нигда происходить. 
+	"""
+
 	def __init__(self, display_widget):
 		self.display_widget = display_widget
 		self.pipeline = None
@@ -209,6 +121,8 @@ class StreamPipeline:
 		display_widget.setFixedWidth(self.sink_width)
 
 	def make_video_feedback_capsfilter(self):
+		"""Создаёт capsfilter, определяющий, форматирование ответвления конвеера, идущего
+		к контрольному видео виджету."""
 		caps = Gst.Caps.from_string(f"video/x-raw,width={self.sink_width},height={240}") 
 		capsfilter = Gst.ElementFactory.make('capsfilter', None)
 		capsfilter.set_property("caps", caps)
@@ -232,7 +146,7 @@ class StreamPipeline:
 		if self.output_src is not None:
 			tee.link(queue2)
 			queue2.link(self.output_src)
-			
+
 		queue1.link(sink)
 
 	def make_video_pipeline(self, input_settings, translation_settings):
@@ -289,6 +203,7 @@ class StreamPipeline:
 		print("bus_callback", msg.parse_error())
 
 	def setup(self):
+		"""Подготовка сконструированного конвеера к работе."""
 		self.state = Gst.State.NULL
 		self.bus = self.pipeline.get_bus()
 		self.bus.add_signal_watch()
@@ -305,6 +220,7 @@ class StreamPipeline:
 		self.pipeline.set_state(Gst.State.PLAYING)
 		
 	def on_sync_message(self, bus, msg):
+		"""Биндим контрольное изображение к переданному снаружи виджету."""
 		if msg.get_structure().get_name() == 'prepare-window-handle':
 			self.display_widget.connect_to_sink(msg.src)
 
@@ -314,6 +230,9 @@ class StreamPipeline:
 		self.pipeline = None
 
 	def eos_handle(self, bus, msg):
+		"""Конец потока вызывает пересборку конвеера.
+		   Это решает некоторые проблемы srt стрима.
+		"""
 		self.stop()
 		self.make_pipeline(self.last_input_settings, self.last_translation_settings)
 		self.setup()

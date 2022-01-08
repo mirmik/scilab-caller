@@ -17,6 +17,8 @@ from scicall.util import get_devices_list
 from scicall.stream_settings import SourceMode, TranslateMode, MediaType
 
 class GstreamerDisplay(QWidget):
+	""" Виджет, в котором рисует выходной элемент видоконвеера """
+
 	def __init__(self):
 		super().__init__()
 		self.winid = self.winId()
@@ -30,6 +32,11 @@ class GstreamerDisplay(QWidget):
 
 
 class WorkZone(QWidget):
+	""" Контроллер одного потока.
+
+		@mediatype - определяет тип контроллера - аудио/видео.
+	"""
+
 	def __init__(self, mediatype):
 		super().__init__()
 
@@ -50,6 +57,10 @@ class WorkZone(QWidget):
 		self.control_panel.set_devices_list(captures)
 		
 	def enable_disable_clicked(self):
+		""" По активации кнопки происходит компиляция данных панели управления и
+			запускается строительство конвеера. Деактивация уничтожает конвеер.
+		"""
+
 		if self.pipeline.runned():
 			self.control_panel.unfreeze()
 			self.stop_pipeline()
@@ -68,6 +79,8 @@ class WorkZone(QWidget):
 		self.pipeline.stop()
 
 class MultiWorkZone(QWidget):
+	"""Рабочая зона состоит из набора однотпных пар аудио/видео контроллеров"""
+	
 	def __init__(self):
 		super().__init__()
 		self.zones = []
@@ -85,6 +98,8 @@ class MultiWorkZone(QWidget):
 		self.layout.addLayout(peer_layout)
 
 class MainWindow(QMainWindow):
+	"""Главное окно"""
+
 	def __init__(self):
 		super().__init__()
 		self.workzone = MultiWorkZone()

@@ -1,3 +1,10 @@
+"""
+	Виджеты панелей управления. 
+	Логика переключения состояний панели управления.
+	Создание объектов StreamSettings для последующей передачи строителю конвеера.
+"""
+
+
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *

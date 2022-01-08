@@ -232,10 +232,7 @@ class StreamPipeline:
 		if self.output_src is not None:
 			tee.link(queue2)
 			queue2.link(self.output_src)
-
-		#if self.translation_builder.srclink is not None:
-		#	self.tee.link(self.queue2)
-		#	self.queue2.link(self.translation_builder.srclink)
+			
 		queue1.link(sink)
 
 	def make_video_pipeline(self, input_settings, translation_settings):

@@ -49,7 +49,7 @@ class TranslationCodecBuilder:
 
 	def mjpeg(self, pipeline, settings):
 		jpegenc = Gst.ElementFactory.make("jpegenc", None)
-		jpegenc.set_property('quality', 50)
+		jpegenc.set_property('quality', 85)
 		pipeline.add(jpegenc)
 		return (jpegenc, jpegenc)
 

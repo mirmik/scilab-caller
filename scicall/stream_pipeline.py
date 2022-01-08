@@ -247,7 +247,6 @@ class StreamPipeline:
 		self.bus.connect('message::error', self.on_error_message)
 		self.bus.connect("message::eos", self.eos_handle)
 
-
 	def on_error_message(self, bus, msg):
 		print("on_error_message", msg.parse_error())
 		
@@ -264,7 +263,6 @@ class StreamPipeline:
 		self.pipeline = None
 
 	def eos_handle(self, bus, msg):
-		print("EOS handle")
 		self.stop()
 		self.make_pipeline(self.last_input_settings, self.last_translation_settings)
 		self.setup()

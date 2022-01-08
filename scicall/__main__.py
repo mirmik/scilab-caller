@@ -55,7 +55,6 @@ class WorkZone(QWidget):
 		self.pipeline.source_text = text
 		
 	def enable_disable_clicked(self):
-		print("enable_disable_button", self.pipeline.runned())
 		if self.pipeline.runned():
 			self.control_panel.unfreeze()
 			self.stop_pipeline()

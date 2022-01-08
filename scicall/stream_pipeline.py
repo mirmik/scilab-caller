@@ -41,6 +41,7 @@ class SourceBuilder:
 			return source
 		elif sys.platform == "win32":
 			source = Gst.ElementFactory.make("ksvideosrc", "source")
+			return source
 		else:
 			raise Extension("platform is not supported")
 

@@ -222,6 +222,7 @@ class StreamPipeline:
 
         self.last_input_settings = input_settings
         self.last_translation_settings = translation_settings
+        self.last_middle_settings = middle_settings
 
         self.pipeline = Gst.Pipeline()
         srcsrc, srcsink = SourceBuilder().make(self.pipeline, input_settings)
@@ -276,6 +277,7 @@ class StreamPipeline:
         """
         self.stop()
         self.make_pipeline(self.last_input_settings,
-                           self.last_translation_settings)
+                           self.last_translation_settings,
+                           self.last_middle_settings)
         self.setup()
         self.start()

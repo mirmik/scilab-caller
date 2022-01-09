@@ -66,12 +66,12 @@ class SourceBuilder:
 	def capture_video_windows(self, pipeline, settings):
 			source = settings.device.make_gst_element()
 			#Gst.ElementFactory.make("mfvideosrc", None)
-			capsfilter = self.make_source_capsfilter()
+			#capsfilter = self.make_source_capsfilter()
 			#source.set_property("device", settings.device)
 			pipeline.add(source)
-			pipeline.add(capsfilter)
-			source.link(capsfilter)
-			return source, capsfilter
+			#pipeline.add(capsfilter)
+			#source.link(capsfilter)
+			return source, source
 	
 	def capture_audio_windows(self, pipeline, settings):
 			source = settings.device.make_gst_element()

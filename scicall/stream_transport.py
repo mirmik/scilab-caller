@@ -79,6 +79,9 @@ class TranslationTransportBuilder:
 		В зависимости от используемого протокола, создаёт на основании переданного 
 		объекта @settings, передающий каскад в конвеере @pipeline  
 	"""
+	def __init__(self):
+		self.srt_latency = 30
+
 	def make(self, pipeline, settings):
 		builders = {
 			TransportType.SRT: self.srt,
@@ -93,6 +96,7 @@ class TranslationTransportBuilder:
 		srtsink.set_property('uri', f"srt://:{settings.port}")
 		srtsink.set_property('wait-for-connection', False)
 		#srtsink.set_property('sync', False)
+		srtsink.set_property('latency', self.srt_latency)
 		pipeline.add(srtsink)
 		return srtsink, srtsink
 		
@@ -100,6 +104,7 @@ class TranslationTransportBuilder:
 		srtsink = Gst.ElementFactory.make("srtsink", None)
 		srtsink.set_property('uri', f"srt://{settings.ip}:{settings.port}")
 		srtsink.set_property('wait-for-connection', False)
+		srtsink.set_property('latency', self.srt_latency)
 		#srtsink.set_property('sync', False)
 		pipeline.add(srtsink)
 		return srtsink, srtsink

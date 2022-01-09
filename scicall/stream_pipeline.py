@@ -171,7 +171,7 @@ class StreamPipeline:
 		videoscale = Gst.ElementFactory.make("videoscale", None)
 		videoconvert = Gst.ElementFactory.make("videoconvert", None)
 		sink = Gst.ElementFactory.make("autovideosink", None)
-		sink.set_property("sync", False)
+		#sink.set_property("sync", False)
 		sink_capsfilter = self.make_video_feedback_capsfilter()
 
 		queue1 = Gst.ElementFactory.make("queue", "q1")

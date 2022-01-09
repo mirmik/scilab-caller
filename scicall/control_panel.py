@@ -9,7 +9,8 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from scicall.stream_settings import (
-	StreamSettings, 
+	StreamSettings,
+	MiddleSettings, 
 	SourceMode, 
 	MediaType,
 	TranslateMode,
@@ -119,12 +120,13 @@ class SourceControlPanel(CommonControlPanel):
 					el.setHidden(False)
 
 
-	def set_devices_list(self, cameras):
-		self.device_list.addItems(cameras)
+	def set_devices_list(self, devices):
+		self.devices = devices
+		self.device_list.addItems([ dev.user_readable_name() for dev in devices ])
 
 	def settings(self):
 		mode = self.mode_list.currentText()
-		device = self.device_list.currentText()
+		device = self.devices[self.device_list.currentIndex()]
 		transport = self.transport_list.currentText()
 		codec = self.codec_list.currentText()
 		ip = self.target_ip.text()
@@ -239,10 +241,13 @@ class ControlPanel(QWidget):
 		self.translation_layout = QVBoxLayout()
 		self.translation_layout.addWidget(self.translation_control_panel)
 		self.translation_frame.setLayout(self.translation_layout)
+		self.enable_display_checkbox = QCheckBox("Проигрывание")
+		self.enable_display_checkbox.setChecked(True)
 
 		self.layout2 = QVBoxLayout()
 		self.layout2.addWidget(self.input_frame)
 		self.layout2.addWidget(self.translation_frame)
+		self.layout2.addWidget(self.enable_display_checkbox)
 		self.layout2.addWidget(self.enable_disable_button)
 		self.layout2.addStretch()
 		self.setLayout(self.layout2)
@@ -253,10 +258,12 @@ class ControlPanel(QWidget):
 		self.input_control_panel.set_devices_list(devices)
 
 	def freeze(self):
+		self.enable_display_checkbox.setEnabled(False)
 		self.input_control_panel.freeze()
 		self.translation_control_panel.freeze()
 
 	def unfreeze(self):
+		self.enable_display_checkbox.setEnabled(True)
 		self.input_control_panel.unfreeze()
 		self.translation_control_panel.unfreeze()
 
@@ -267,3 +274,15 @@ class ControlPanel(QWidget):
 	def input_settings(self):
 		'''Формирует объект с параметрами выбранного источника сигнала.'''
 		return self.input_control_panel.settings()
+
+	def display_settings(self):
+		'''Формирует объект с параметрами выбранного источника сигнала.'''
+		return MiddleSettings(
+			display_enabled=self.enable_display_checkbox.checkState() != Qt.Unchecked)
+		
+	def compile_settings(self):
+		return ( 
+			self.input_settings(), 
+			self.translation_settings(), 
+			self.display_settings() 
+		)

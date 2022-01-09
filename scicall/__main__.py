@@ -6,6 +6,7 @@ gi.require_version('GstVideo', '1.0')
 from gi.repository import GObject, Gst, GstVideo
 
 import sys
+import traceback
 from enum import Enum
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
@@ -13,7 +14,7 @@ from PyQt5.QtCore import *
 
 from scicall.control_panel import ControlPanel
 from scicall.stream_pipeline import StreamPipeline
-from scicall.util import get_devices_list
+from scicall.util import get_devices_list, start_device_monitor, stop_device_monitor
 from scicall.stream_settings import SourceMode, TranslateMode, MediaType
 
 class GstreamerDisplay(QWidget):
@@ -71,12 +72,28 @@ class WorkZone(QWidget):
 	def setup_pipeline(self):
 		input_settings = self.control_panel.input_settings()
 		translation_settings = self.control_panel.translation_settings()
-		self.pipeline.make_pipeline(input_settings, translation_settings)
-		self.pipeline.setup()
-		self.pipeline.start()
+		display_settings = self.control_panel.display_settings()
+		try:
+			self.pipeline.make_pipeline(
+				input_settings, translation_settings, display_settings)
+			self.pipeline.setup()
+			self.pipeline.start()
+		except Exception as ex:
+			traceback.print_exc()
+			msgBox = QMessageBox()
+			msgBox.setText("Запуск конвеера привёл к исключению:\r\n" + 
+				traceback.format_exc())
+			msgBox.exec()
 
 	def stop_pipeline(self):
-		self.pipeline.stop()
+		try:
+			self.pipeline.stop()
+		except Exception as ex:
+			traceback.print_exc()
+			msgBox = QMessageBox()
+			msgBox.setText("Остановка конвеера привела к исключению:\r\n" + 
+				traceback.format_exc())
+			msgBox.exec()
 
 class MultiWorkZone(QWidget):
 	"""Рабочая зона состоит из набора однотпных пар аудио/видео контроллеров"""
@@ -103,20 +120,19 @@ class MainWindow(QMainWindow):
 	def __init__(self):
 		super().__init__()
 		self.workzone = MultiWorkZone()
+		
+		start_device_monitor()# Монитор необходим, чтобы работали запросы списков устройств
 		self.workzone.add_zone()
 		self.workzone.add_zone()
+		stop_device_monitor()
+
 		self.setGeometry(100, 100, 640, 480)
 		self.setCentralWidget(self.workzone)
 
 def main():
 	Gst.init(sys.argv)
-
-	#devices_analyze()
-
 	app = QApplication(sys.argv)
 	window = MainWindow()
-	#window.workzone.setup_pipeline()
-	#window.workzone.start_pipeline()
 	window.show()
 	sys.exit(app.exec_())
 

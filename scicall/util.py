@@ -2,22 +2,47 @@ import os
 import sys
 from gi.repository import GObject, Gst, GstVideo
 from scicall.stream_settings import MediaType
+from scicall.device_adapter import (
+	DeviceAdapterFabric, 
+	DefaultVideoDeviceAdapter,
+	DefaultAudioDeviceAdapter
+)
+
+MONITOR = None
+
+def start_device_monitor():
+	global MONITOR
+	MONITOR = Gst.DeviceMonitor() 
+	MONITOR.start()
+
+def stop_device_monitor():
+	global MONITOR
+	MONITOR.stop()
+	MONITOR = None
 
 def get_video_captures_list_windows():
-	candidates = [ "1", "2" ]
-	return sorted(candidates)
+	devs = MONITOR.get_devices()
+	filtered_devs = [ dev for dev in devs if dev.get_device_class() == "Video/Source" ]
+	defaults = [ DefaultVideoDeviceAdapter() ]
+	adapters = [ DeviceAdapterFabric().make_adapter(dev) for dev in filtered_devs]
+	return defaults + adapters
 
 def get_video_captures_list_linux():
-	monitor = Gst.DeviceMonitor()
-	monitor.start()
-	devs = monitor.get_devices()
-	video_devs = [ dev for dev in devs if dev.get_device_class() == "Video/Source" ]
-	monitor.stop()
-	pathes = [ dev.get_properties().get_string("device.path") for dev in video_devs ]
-	return sorted(pathes)
+	devs = MONITOR.get_devices()
+	filtered_devs = [ dev for dev in devs if dev.get_device_class() == "Video/Source" ]
+	defaults = [ DefaultVideoDeviceAdapter() ]
+	adapters = [ DeviceAdapterFabric().make_adapter(dev) for dev in filtered_devs]
+	return defaults + adapters
+
+def get_audio_captures_list_windows():
+	devs = MONITOR.get_devices()
+	filtered_devs = [ dev for dev in devs if dev.get_device_class() == "Audio/Source" ]
+	defaults = [DefaultAudioDeviceAdapter()]
+	adapters = [ DeviceAdapterFabric().make_adapter(dev) for dev in filtered_devs]
+	return defaults + adapters
 
 def get_audio_captures_list_linux():
-	return ["hw:0", "hw:1", "hw:2"]
+	return [DefaultAudioDeviceAdapter()]
 
 def get_video_captures_list():
 	if sys.platform == 'linux':

@@ -50,31 +50,47 @@ class SourceBuilder:
 		trans_sink.link(codec_src)
 		return trans_src, codec_sink
 	
-	def capture_video(self, pipeline, settings):
-			source = Gst.ElementFactory.make("v4l2src", None)
+	def capture_video_linux(self, pipeline, settings):
+			source = settings.device.make_gst_element()
 			capsfilter = self.make_source_capsfilter()
-			source.set_property("device", settings.device)
 			pipeline.add(source)
 			pipeline.add(capsfilter)
 			source.link(capsfilter)
-			return (source, capsfilter)
+			return source, capsfilter
 	
-	def capture_audio(self, pipeline, settings):
-			source = Gst.ElementFactory.make("alsasrc", None)
-			source.set_property("device", settings.device)
+	def capture_audio_linux(self, pipeline, settings):
+			source = settings.device.make_gst_element()
+			pipeline.add(source)
+			return source, source	
+
+	def capture_video_windows(self, pipeline, settings):
+			source = settings.device.make_gst_element()
+			#Gst.ElementFactory.make("mfvideosrc", None)
+			capsfilter = self.make_source_capsfilter()
+			#source.set_property("device", settings.device)
+			pipeline.add(source)
+			pipeline.add(capsfilter)
+			source.link(capsfilter)
+			return source, capsfilter
+	
+	def capture_audio_windows(self, pipeline, settings):
+			source = settings.device.make_gst_element()
+			#Gst.ElementFactory.make("wasapisrc", None)
+			#source.set_property("device", settings.device)
 			pipeline.add(source)
 			return source, source	
 
 	def capture(self, pipeline, settings):
 		if sys.platform == "linux":
 			return{
-				MediaType.VIDEO : self.capture_video,
-				MediaType.AUDIO : self.capture_audio
+				MediaType.VIDEO : self.capture_video_linux,
+				MediaType.AUDIO : self.capture_audio_linux
 			}[settings.mediatype](pipeline, settings)
 		elif sys.platform == "win32":
-			source = Gst.ElementFactory.make("ksvideosrc", "source")
-			pipeline.add(source)
-			return source, source
+			return{
+				MediaType.VIDEO : self.capture_video_windows,
+				MediaType.AUDIO : self.capture_audio_windows
+			}[settings.mediatype](pipeline, settings)
 		else:
 			raise Extension("platform is not supported")
 
@@ -116,7 +132,7 @@ class TranslationBuilder:
 		msgBox.setWindowTitle("Неоконченное строительство");
 		msgBox.setText("Режим автоматического согласования портов в разработке.");
 		msgBox.exec();
-		return self.fake()
+		return self.fake(pipeline, settings)
 
 class StreamPipeline:
 	"""Класс отвечает за строительство работы каскада gstreamer и инкапсулирует
@@ -145,59 +161,61 @@ class StreamPipeline:
 		capsfilter.set_property("caps", caps)
 		return capsfilter
 
-	def make_audio_pipeline(self, input_settings, translation_settings):
-		print("make_audio_pipeline")
+	def make_audio_middle_end(self, settings):
+		pass
+
+	def make_video_middle_end(self, settings):
+		if settings.display_enabled:
+			videoscale = Gst.ElementFactory.make("videoscale", None)
+			videoconvert = Gst.ElementFactory.make("videoconvert", None)
+			sink = Gst.ElementFactory.make("autovideosink", None)
+			sink_capsfilter = self.make_video_feedback_capsfilter()
+			self.pipeline.add(videoscale)
+			self.pipeline.add(videoconvert)
+			self.pipeline.add(sink_capsfilter)
+			self.pipeline.add(sink)
+			videoscale.link(videoconvert)
+			videoconvert.link(sink_capsfilter)
+			sink_capsfilter.link(sink)
+			return (videoscale, sink)
+		else:
+			sink = Gst.ElementFactory.make("fakesink", None)
+			self.pipeline.add(sink)
+			return (sink, sink)
+
+	def make_audio_middle_end(self, settings):
+		if settings.display_enabled:
+			convert = Gst.ElementFactory.make("audioconvert", None)
+			sink = Gst.ElementFactory.make("autoaudiosink", None)
+			self.pipeline.add(convert)
+			self.pipeline.add(sink)
+			convert.link(sink)
+			return (convert, sink)
+		else:
+			sink = Gst.ElementFactory.make("fakesink", None)
+			self.pipeline.add(sink)
+			return (sink, sink)
+
+	def link_pipeline(self):
 		tee = Gst.ElementFactory.make("tee", None)
-		sink = Gst.ElementFactory.make("autoaudiosink", None)
+
 		queue1 = Gst.ElementFactory.make("queue", "q1")
 		queue2 = Gst.ElementFactory.make("queue", "q2")
-		
+
 		self.pipeline.add(tee)
-		self.pipeline.add(sink)
 		self.pipeline.add(queue1)
 		self.pipeline.add(queue2)
-		
+
 		self.source_sink.link(tee)
 		tee.link(queue1)
-		
+		queue1.link(self.middle_src)
+
 		if self.output_src is not None:
 			tee.link(queue2)
 			queue2.link(self.output_src)
 
-		queue1.link(sink)
 
-	def make_video_pipeline(self, input_settings, translation_settings):
-		tee = Gst.ElementFactory.make("tee", None)
-		videoscale = Gst.ElementFactory.make("videoscale", None)
-		videoconvert = Gst.ElementFactory.make("videoconvert", None)
-		sink = Gst.ElementFactory.make("autovideosink", None)
-		#sink.set_property("sync", False)
-		sink_capsfilter = self.make_video_feedback_capsfilter()
-
-		queue1 = Gst.ElementFactory.make("queue", "q1")
-		queue2 = Gst.ElementFactory.make("queue", "q2")
-
-		self.pipeline.add(tee)
-		self.pipeline.add(videoscale)
-		self.pipeline.add(videoconvert)
-		self.pipeline.add(sink_capsfilter)
-		self.pipeline.add(sink)
-		self.pipeline.add(queue1)
-		self.pipeline.add(queue2)
-
-		self.source_sink.link(tee)
-		tee.link(queue1)
-		queue1.link(videoscale)
-
-		if self.output_src is not None:
-			tee.link(queue2)
-			queue2.link(self.output_src)
-
-		videoscale.link(videoconvert)
-		videoconvert.link(sink_capsfilter)
-		sink_capsfilter.link(sink)
-
-	def make_pipeline(self, input_settings, translation_settings):
+	def make_pipeline(self, input_settings, translation_settings, middle_settings):
 		assert input_settings.mediatype == translation_settings.mediatype
 
 		self.last_input_settings = input_settings
@@ -206,13 +224,16 @@ class StreamPipeline:
 		self.pipeline = Gst.Pipeline()
 		srcsrc, srcsink = SourceBuilder().make(self.pipeline, input_settings)
 		outsrc, outsink = TranslationBuilder().make(self.pipeline, translation_settings)
+		middle_src, middle_sink = {
+			MediaType.VIDEO: self.make_video_middle_end,
+			MediaType.AUDIO: self.make_audio_middle_end
+		}[input_settings.mediatype](middle_settings)
+
 		self.source_sink = srcsink
 		self.output_src = outsrc
+		self.middle_src = middle_src
 
-		if input_settings.mediatype == MediaType.VIDEO:
-			return self.make_video_pipeline(input_settings, translation_settings)
-		elif input_settings.mediatype == MediaType.AUDIO:
-			return self.make_audio_pipeline(input_settings, translation_settings)
+		self.link_pipeline()
 
 	def runned(self):
 		return self.pipeline is not None

@@ -48,3 +48,7 @@ class StreamSettings:
 		self.ip = ip
 		self.port = port
 		self.mediatype = mediatype
+
+class MiddleSettings:
+	def __init__(self, display_enabled):
+		self.display_enabled = display_enabled

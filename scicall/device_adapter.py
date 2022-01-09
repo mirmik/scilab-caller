@@ -71,6 +71,24 @@ class GstWasapiDeviceAdapter(DeviceAdapter):
 		el.set_property("device", self.gstdevice.get_properties().get_string("device.strid"))
 		return el
 
+class GstV4l2DeviceAdapter(DeviceAdapter):
+	def user_readable_name(self):
+		return self.gstdevice.get_name()
+
+	def make_gst_element(self):
+		el = Gst.ElementFactory.make("v4l2src", None)
+		el.set_property("device", self.gstdevice.get_properties().get_string("device.path"))
+		return el	
+
+class GstAlsaDeviceAdapter(DeviceAdapter):
+	def user_readable_name(self):
+		return self.gstdevice.get_name()
+
+	def make_gst_element(self):
+		el = Gst.ElementFactory.make("alsasrc", None)
+		el.set_property("device", self.gstdevice.get_properties().get_string("device.path"))
+		return el	
+
 class DeviceAdapterFabric:
 	def make_adapter(self, gstdevice):
 		typename = type(gstdevice).__name__
@@ -80,5 +98,10 @@ class DeviceAdapterFabric:
 			return GstDirectSoundSrcDeviceAdapter(gstdevice)
 		elif typename == "GstWasapiDevice":
 			return GstWasapiDeviceAdapter(gstdevice)
+		elif typename == "GstV4l2Device":
+			return GstV4l2DeviceAdapter(gstdevice)
+		elif typename == "GstAlsaDevice":
+			return GstAlsaDeviceAdapter(gstdevice)
 
+		print("undefined device type:", typename)
 		return DeviceAdapter(gstdevice)

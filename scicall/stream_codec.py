@@ -14,7 +14,8 @@ class SourceCodecBuilder:
 	def make(self, pipeline, settings):
 		builders = {
 			VideoCodecType.MJPEG: self.mjpeg,
-			AudioCodecType.OPUS: self.opus
+			VideoCodecType.H264: self.h264,
+			AudioCodecType.OPUS: self.opus,
 		}
 		return builders[settings.codec](pipeline, settings)	
 
@@ -34,6 +35,15 @@ class SourceCodecBuilder:
 		opusparse.link(opusdec)
 		return (opusparse, opusdec)
 
+	def h264(self, pipeline, settings):
+		h264parse = Gst.ElementFactory.make("h264parse", None)
+		h264dec = Gst.ElementFactory.make("avdec_h264", None)
+		pipeline.add(h264parse)
+		pipeline.add(h264dec)
+		h264parse.link(h264dec)
+		return (h264parse, h264dec)
+
+
 class TranslationCodecBuilder:
 	""" Строитель кодировщика исходящего потока. 
 		
@@ -43,6 +53,7 @@ class TranslationCodecBuilder:
 	def make(self, pipeline, settings):
 		builders = {
 			VideoCodecType.MJPEG: self.mjpeg,
+			VideoCodecType.H264: self.h264,
 			AudioCodecType.OPUS: self.opus
 		}
 		return builders[settings.codec](pipeline, settings)
@@ -57,3 +68,9 @@ class TranslationCodecBuilder:
 		opusenc = Gst.ElementFactory.make("opusenc", None)
 		pipeline.add(opusenc)
 		return (opusenc, opusenc)
+
+	def h264(self, pipeline, settings):
+		h264enc = Gst.ElementFactory.make("x264enc", None)
+		h264enc.set_property('tune', "zerolatency")
+		pipeline.add(h264enc)
+		return (h264enc, h264enc)

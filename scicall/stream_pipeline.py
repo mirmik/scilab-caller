@@ -30,13 +30,13 @@ class SourceBuilder:
 
 	def make(self, pipeline, settings):
 		builders = {
-			SourceMode.TEST: self.test,
+			SourceMode.TEST: self.test_source,
 			SourceMode.CAPTURE: self.capture,
 			SourceMode.STREAM: self.stream,
 		}
 		return builders[settings.mode](pipeline, settings)
 
-	def test(self, pipeline, settings):
+	def test_source(self, pipeline, settings):
 		source = Gst.ElementFactory.make({ 
 			MediaType.VIDEO: "videotestsrc", 
 			MediaType.AUDIO: "audiotestsrc"
@@ -49,16 +49,28 @@ class SourceBuilder:
 		codec_src, codec_sink = SourceCodecBuilder().make(pipeline, settings)
 		trans_sink.link(codec_src)
 		return trans_src, codec_sink
-		
-	def capture(self, pipeline, settings):
-		if sys.platform == "linux":
-			source = Gst.ElementFactory.make({
-				MediaType.VIDEO : "v4l2src",
-				MediaType.AUDIO : "alsasrc"
-			}[settings.mediatype], None)
+	
+	def capture_video(self, pipeline, settings):
+			source = Gst.ElementFactory.make("v4l2src", None)
+			capsfilter = self.make_source_capsfilter()
 			source.set_property("device", settings.device)
 			pipeline.add(source)
-			return source, source
+			pipeline.add(capsfilter)
+			source.link(capsfilter)
+			return (source, capsfilter)
+	
+	def capture_audio(self, pipeline, settings):
+			source = Gst.ElementFactory.make("alsasrc", None)
+			source.set_property("device", settings.device)
+			pipeline.add(source)
+			return source, source	
+
+	def capture(self, pipeline, settings):
+		if sys.platform == "linux":
+			return{
+				MediaType.VIDEO : self.capture_video,
+				MediaType.AUDIO : self.capture_audio
+			}[settings.mediatype](pipeline, settings)
 		elif sys.platform == "win32":
 			source = Gst.ElementFactory.make("ksvideosrc", "source")
 			pipeline.add(source)
@@ -66,12 +78,12 @@ class SourceBuilder:
 		else:
 			raise Extension("platform is not supported")
 
-	#def make_source_capsfilter(self):
-	#	caps = Gst.Caps.from_string(
-	#		f'video/x-raw,width={self.video_width},height={self.video_height},framerate={self.framerate}/1') 
-	#	capsfilter = Gst.ElementFactory.make('capsfilter', None)
-	#	capsfilter.set_property("caps", caps)
-	#	return capsfilter
+	def make_source_capsfilter(self):
+		caps = Gst.Caps.from_string(
+			f'video/x-raw,width={self.video_width},height={self.video_height},framerate={self.framerate}/1') 
+		capsfilter = Gst.ElementFactory.make('capsfilter', None)
+		capsfilter.set_property("caps", caps)
+		return capsfilter
 
 
 
@@ -112,6 +124,11 @@ class StreamPipeline:
 
 		NB: Помимо объектов данного класса и подчинённых им объектов, 
 		работа с конвеером и элементами ковеера не должна нигда происходить. 
+
+		Схема конвеера:
+		source_end --> tee --> queue --> translation_end
+		                |
+		                 ----> queue --> videoscale --> videoconvert --> display_widget 
 	"""
 
 	def __init__(self, display_widget):
@@ -154,6 +171,7 @@ class StreamPipeline:
 		videoscale = Gst.ElementFactory.make("videoscale", None)
 		videoconvert = Gst.ElementFactory.make("videoconvert", None)
 		sink = Gst.ElementFactory.make("autovideosink", None)
+		sink.set_property("sync", False)
 		sink_capsfilter = self.make_video_feedback_capsfilter()
 
 		queue1 = Gst.ElementFactory.make("queue", "q1")

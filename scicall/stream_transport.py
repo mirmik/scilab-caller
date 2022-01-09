@@ -60,12 +60,14 @@ class SourceTransportBuilder:
 
 	def rtpcodecdepay_caps(self, codec):
 		return {
+			VideoCodecType.H264 : "application/x-rtp, media=video, clock-rate=90000, encoding-name=H264, payload=96",
 			VideoCodecType.MJPEG : "application/x-rtp, encoding-name=JPEG, payload=26",
 			AudioCodecType.OPUS : "application/x-rtp, encoding-name=OPUS, payload=96"
 		}[codec]
 
 	def rtpcodecdepay(self, codec):
 		return {
+			VideoCodecType.H264 : "rtph264depay",
 			VideoCodecType.MJPEG : "rtpjpegdepay",
 			AudioCodecType.OPUS : "rtpopusdepay"
 		}[codec]
@@ -90,6 +92,7 @@ class TranslationTransportBuilder:
 		srtsink = Gst.ElementFactory.make("srtsink", None)
 		srtsink.set_property('uri', f"srt://:{settings.port}")
 		srtsink.set_property('wait-for-connection', False)
+		#srtsink.set_property('sync', False)
 		pipeline.add(srtsink)
 		return srtsink, srtsink
 		
@@ -97,6 +100,7 @@ class TranslationTransportBuilder:
 		srtsink = Gst.ElementFactory.make("srtsink", None)
 		srtsink.set_property('uri', f"srt://{settings.ip}:{settings.port}")
 		srtsink.set_property('wait-for-connection', False)
+		#srtsink.set_property('sync', False)
 		pipeline.add(srtsink)
 		return srtsink, srtsink
 
@@ -104,6 +108,7 @@ class TranslationTransportBuilder:
 		udpsink = Gst.ElementFactory.make("udpsink", None)
 		udpsink.set_property('port', settings.port)
 		udpsink.set_property('host', settings.ip)
+		#udpsink.set_property('sync', False)
 		pipeline.add(udpsink)
 		return udpsink, udpsink
 
@@ -111,14 +116,16 @@ class TranslationTransportBuilder:
 		udpsink = Gst.ElementFactory.make("udpsink", None)
 		udpsink.set_property('port', settings.port)
 		udpsink.set_property('host', settings.ip)
-		rtpjpegpay = Gst.ElementFactory.make(self.rtpcodecpay(settings.codec), None)
+		#udpsink.set_property('sync', False)
+		rtpcodecpay = Gst.ElementFactory.make(self.rtpcodecpay(settings.codec), None)
 		pipeline.add(udpsink)
-		pipeline.add(rtpjpegpay)
-		rtpjpegpay.link(udpsink)
-		return rtpjpegpay, udpsink
+		pipeline.add(rtpcodecpay)
+		rtpcodecpay.link(udpsink)
+		return rtpcodecpay, udpsink
 
 	def rtpcodecpay(self, codec):
 		return {
+			VideoCodecType.H264 : "rtph264pay",
 			VideoCodecType.MJPEG : "rtpjpegpay",
 			AudioCodecType.OPUS : "rtpopuspay",
 		}[codec]

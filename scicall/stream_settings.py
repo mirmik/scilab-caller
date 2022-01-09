@@ -21,7 +21,8 @@ class TransportType(str, Enum):
 	RTPUDP = "rtp/udp"
 
 class VideoCodecType(str, Enum):
-	MJPEG = "mjpeg"
+	MJPEG = "mjpeg",
+	H264 = "h264",
 
 class AudioCodecType(str, Enum):
 	OPUS = "opus"

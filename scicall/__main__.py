@@ -10,7 +10,7 @@ from scicall.util import get_devices_list, start_device_monitor, stop_device_mon
 from scicall.stream_pipeline import StreamPipeline
 from scicall.control_panel import ControlPanel
 from scicall.guest_caller import GuestCaller
-from scicall.guest_controller import GuestController
+from scicall.guest_controller import ConnectionController, ConnectionControllerZone
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -119,6 +119,7 @@ class MultiWorkZone(QWidget):
 
 class ExpertWidget(QWidget):
     def __init__(self):
+        super().__init__()
         self.workzone = MultiWorkZone()
         self.workzone.add_zone()
         self.workzone.add_zone()
@@ -126,26 +127,31 @@ class ExpertWidget(QWidget):
         self.layout.addWidget(self.workzone)
         self.setLayout(self.layout)
 
+class Container(QWidget):
+    def __init__(self, wdg):
+        super().__init__()    
+        self.vlayout = QVBoxLayout()
+        self.hlayout = QHBoxLayout()
+        self.hlayout.addStretch()
+        self.hlayout.addWidget(wdg)
+        self.hlayout.addStretch()
+        self.vlayout.addStretch()
+        self.vlayout.addLayout(self.hlayout)
+        self.vlayout.addStretch()
+        self.setLayout(self.vlayout)
+
+
 class CentralWidget(QTabWidget):
-    def __init__():
+    need_resize = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()    	
         self.userwdg = GuestCaller()
-        self.stantionwdg= GuestController()
+        self.stantionwdg= ConnectionControllerZone()
         self.experwdg = ExpertWidget()
-        self.addTab(self.userwdg)
-        self.addTab(self.stationwdg)
-        self.addTab(self.experwdg)
-        self.currentChanged.connect(self.update_sizes)
-
-    def update_sizes(index):
-        for i in range(self.count()):
-            if i != index:
-                self.widget(i).setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-
-        self.widget(index).setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-        self.widget(index).resize(self.widget(index).minimumSizeHint())
-        self.widget(index).adjustSize()
-        resize(minimumSizeHint())
-        self.adjustSize()
+        self.addTab(Container(self.userwdg), "Гость")
+        self.addTab(Container(self.stantionwdg), "Сервер")
+        self.addTab(Container(self.experwdg), "Тестовый")
 
 class MainWindow(QMainWindow):
     """Главное окно"""
@@ -157,8 +163,12 @@ class MainWindow(QMainWindow):
         self.cw = CentralWidget()
         stop_device_monitor()
 
-        self.setGeometry(100, 100, 640, 480)
         self.setCentralWidget(self.cw)
+        self.cw.need_resize.connect(self.need_resize_handle)
+
+    def need_resize_handle(self):
+        self.setFixedSize(self.minimumSizeHint())
+        self.adjustSize()
 
 
 def main():

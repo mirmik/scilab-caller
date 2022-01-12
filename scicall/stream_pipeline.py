@@ -153,7 +153,8 @@ class StreamPipeline:
         self.display_widget = display_widget
         self.pipeline = None
         self.sink_width = 320
-        display_widget.setFixedWidth(self.sink_width)
+        if display_widget:
+	        display_widget.setFixedWidth(self.sink_width)
 
     def make_video_feedback_capsfilter(self):
         """Создаёт capsfilter, определяющий, форматирование ответвления конвеера, идущего

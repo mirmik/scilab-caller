@@ -91,10 +91,10 @@ def get_devices_list(mediatype):
         return get_audio_captures_list()
 
 def channel_video_port(ch):
-    return PORT_BASE + ch * 3 + 0
-
-def channel_audio_port(ch):
     return PORT_BASE + ch * 3 + 1
 
-def channel_connect_port(ch):
+def channel_audio_port(ch):
     return PORT_BASE + ch * 3 + 2
+
+def channel_control_port(ch):
+    return PORT_BASE + ch * 3 + 0

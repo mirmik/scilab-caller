@@ -3,6 +3,7 @@ from scicall.stream_settings import (
     TransportType,
     VideoCodecType,
     AudioCodecType,
+    MediaType
 )
 
 
@@ -18,7 +19,7 @@ class SourceTransportBuilder:
             TransportType.SRT: self.srt,
             TransportType.SRTREMOTE: self.srt_remote,
             TransportType.UDP: self.udp,
-            TransportType.RTPUDP: self.rtpudp
+            TransportType.RTPUDP: self.rtpudp,
             TransportType.NDI: self.ndi
         }
         return builders[settings.transport](pipeline, settings)
@@ -94,16 +95,25 @@ class TranslationTransportBuilder:
             TransportType.SRT: self.srt,
             TransportType.SRTREMOTE: self.srt_remote,
             TransportType.UDP: self.udp,
-            TransportType.RTPUDP: self.rtpudp
+            TransportType.RTPUDP: self.rtpudp,
             TransportType.NDI: self.ndi
         }
         return builders[settings.transport](pipeline, settings)
 
+    def converter(self,mediatype):
+        if mediatype == MediaType.VIDEO:
+            return "videoconvert"
+        else:
+            return "audioconvert"
+
     def ndi(self, pipeline, settings):
+        converter = Gst.ElementFactory.make(self.converter(settings.mediatype), None)
         ndisink = Gst.ElementFactory.make("ndisink", None)
-        ndisink.set_property('name', settings.ndi_name)
+        ndisink.set_property('ndi-name', settings.ndi_name)
         pipeline.add(ndisink)
-        return ndisink, ndisink
+        pipeline.add(converter)
+        converter.link(ndisink)
+        return converter, ndisink
 
     def srt(self, pipeline, settings):
         srtsink = Gst.ElementFactory.make("srtsink", None)

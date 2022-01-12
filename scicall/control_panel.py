@@ -220,10 +220,12 @@ class TranslationControlPanel(CommonControlPanel):
             codec=codec,
             ip=ip,
             port=int(port),
-            mediatype=self.mediatype)
+            mediatype=self.mediatype,
+            ndi_name="test_ndi")
 
 
 class ControlPanel(QWidget):
+    need_resize = pyqtSignal()
     def __init__(self, mediatype):
         super().__init__()
         self.enable_disable_button = QPushButton('Enable/Disable')

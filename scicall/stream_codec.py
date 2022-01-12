@@ -17,6 +17,7 @@ class SourceCodecBuilder:
             VideoCodecType.MJPEG: self.mjpeg,
             VideoCodecType.H264: self.h264,
             VideoCodecType.NOCODEC: self.nocodec,
+            AudioCodecType.NOCODEC: self.nocodec,
             AudioCodecType.OPUS: self.opus,
         }
         return builders[settings.codec](pipeline, settings)
@@ -62,13 +63,14 @@ class TranslationCodecBuilder:
         builders = {
             VideoCodecType.MJPEG: self.mjpeg,
             VideoCodecType.H264: self.h264,
-            AudioCodecType.OPUS: self.opus
+            AudioCodecType.OPUS: self.opus,
             VideoCodecType.NOCODEC: self.nocodec,
+            AudioCodecType.NOCODEC: self.nocodec
         }
         return builders[settings.codec](pipeline, settings)
 
     def nocodec(self, pipeline, settings):
-        elem = Gst.ElementFactory.make("ident", None)
+        elem = Gst.ElementFactory.make("identity", None)
         pipeline.add(elem)
         return (elem, elem)
         

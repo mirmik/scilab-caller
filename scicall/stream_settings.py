@@ -33,7 +33,8 @@ class VideoCodecType(str, Enum):
 
 
 class AudioCodecType(str, Enum):
-    OPUS = "opus"
+    OPUS = "opus",
+    NOCODEC = "nocodec",
 
 
 class StreamSettings:

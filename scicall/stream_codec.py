@@ -5,8 +5,11 @@ from scicall.stream_settings import (
 )
 from scicall.util import pipeline_chain
 
+class CodecBuilder:
+    def __init__(self):
+        self.jpeg_quality = 30
 
-class SourceCodecBuilder:
+class SourceCodecBuilder(CodecBuilder):
     """ Строитель декодировщика внешнего потока. 
 
             В зависимости от используемого кодека, создаёт на основании переданного 
@@ -70,7 +73,7 @@ class SourceCodecBuilder:
         return (h265parse, h265dec)
 
 
-class TranslationCodecBuilder:
+class TranslationCodecBuilder(CodecBuilder):
     """ Строитель кодировщика исходящего потока. 
 
             В зависимости от используемого кодека, создаёт на основании переданного 
@@ -96,7 +99,7 @@ class TranslationCodecBuilder:
         
     def mjpeg(self, pipeline, settings):
         jpegenc = Gst.ElementFactory.make("jpegenc", None)
-        jpegenc.set_property('quality', 85)
+        jpegenc.set_property('quality', self.jpeg_quality)
         pipeline.add(jpegenc)
         return (jpegenc, jpegenc)
 

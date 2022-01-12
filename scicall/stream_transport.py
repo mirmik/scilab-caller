@@ -155,12 +155,14 @@ class TranslationTransportBuilder(TransportBuilder):
 
     def ndi(self, pipeline, settings):
         converter = Gst.ElementFactory.make(self.converter(settings.mediatype), None)
+        videoscale = Gst.ElementFactory.make("videoscale", None)
+        #q = Gst.ElementFactory.make("queue", None)
         ndisink = Gst.ElementFactory.make("ndisink", None)
+        caps = Gst.Caps.from_string("video/x-raw,format=UYVY,width=800,height=600")
+        capsfilter = Gst.ElementFactory.make('capsfilter', None)
+        capsfilter.set_property("caps", caps)
         ndisink.set_property('ndi-name', settings.ndi_name)
-        pipeline.add(ndisink)
-        pipeline.add(converter)
-        converter.link(ndisink)
-        return converter, ndisink
+        return pipeline_chain(pipeline, converter, videoscale, capsfilter, ndisink) 
 
     def srt(self, pipeline, settings):
         srtsink = Gst.ElementFactory.make("srtsink", None)

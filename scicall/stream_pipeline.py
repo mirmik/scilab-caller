@@ -16,6 +16,7 @@ from scicall.stream_settings import (
 
 from scicall.stream_transport import SourceTransportBuilder, TranslationTransportBuilder
 from scicall.stream_codec import SourceCodecBuilder, TranslationCodecBuilder
+from scicall.util import pipeline_chain
 
 
 class SourceBuilder:
@@ -25,7 +26,7 @@ class SourceBuilder:
     """
 
     def __init__(self):
-        self.nocaps = True
+        self.nocaps = False
         self.video_width = 640
         self.video_height = 480
         self.framerate = 30
@@ -57,12 +58,9 @@ class SourceBuilder:
         if self.nocaps:
             pipeline.add(source)
             return source, source
-
         capsfilter = self.make_source_capsfilter()
-        pipeline.add(source)
-        pipeline.add(capsfilter)
-        source.link(capsfilter)
-        return source, capsfilter
+        #jpegdec = Gst.ElementFactory.make("jpegdec", None)
+        return pipeline_chain(pipeline, source, capsfilter)
 
     def capture_audio_linux(self, pipeline, settings):
         source = settings.device.make_gst_element()
@@ -103,6 +101,8 @@ class SourceBuilder:
     def make_source_capsfilter(self):
         caps = Gst.Caps.from_string(
             f'video/x-raw,width={self.video_width},height={self.video_height},framerate={self.framerate}/1')
+        #caps = Gst.Caps.from_string(
+        #    f'image/jpeg,width={self.video_width},height={self.video_height},framerate={self.framerate}/1')
         capsfilter = Gst.ElementFactory.make('capsfilter', None)
         capsfilter.set_property("caps", caps)
         return capsfilter
@@ -180,14 +180,7 @@ class StreamPipeline:
             videoconvert = Gst.ElementFactory.make("videoconvert", None)
             sink = Gst.ElementFactory.make("autovideosink", None)
             sink_capsfilter = self.make_video_feedback_capsfilter()
-            self.pipeline.add(videoscale)
-            self.pipeline.add(videoconvert)
-            self.pipeline.add(sink_capsfilter)
-            self.pipeline.add(sink)
-            videoscale.link(videoconvert)
-            videoconvert.link(sink_capsfilter)
-            sink_capsfilter.link(sink)
-            return (videoscale, sink)
+            return pipeline_chain(self.pipeline, videoscale, videoconvert, sink_capsfilter, sink)
         else:
             sink = Gst.ElementFactory.make("fakesink", None)
             self.pipeline.add(sink)

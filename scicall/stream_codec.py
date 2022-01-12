@@ -123,7 +123,7 @@ class TranslationCodecBuilder:
         return pipeline_chain(pipeline, convert, h264enc, h264parse, tsmux)
 
     def h265(self, pipeline, settings):
-        h265enc = Gst.ElementFactory.make("x264enc", None)
+        h265enc = Gst.ElementFactory.make("x265enc", None)
         convert = Gst.ElementFactory.make("videoconvert", None)
         h265enc.set_property('tune', "zerolatency")
         pipeline.add(h265enc)

@@ -25,8 +25,8 @@ class SourceBuilder:
     """
 
     def __init__(self):
-        self.video_width = 640
-        self.video_height = 480
+        self.video_width = 800
+        self.video_height = 600
         self.framerate = 30
 
     def make(self, pipeline, settings):

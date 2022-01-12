@@ -9,7 +9,7 @@ from scicall.util import pipeline_chain
 
 class TransportBuilder:
     def __init__(self):
-        self.srt_latency = 40
+        self.srt_latency = 20
 
 class SourceTransportBuilder(TransportBuilder):
     """ Строитель приёмного каскада внешнего потока. 

@@ -19,6 +19,7 @@ class SourceTransportBuilder:
             TransportType.SRTREMOTE: self.srt_remote,
             TransportType.UDP: self.udp,
             TransportType.RTPUDP: self.rtpudp
+            TransportType.NDI: self.ndi
         }
         return builders[settings.transport](pipeline, settings)
 
@@ -28,6 +29,9 @@ class SourceTransportBuilder:
         srtsrc.set_property('wait-for-connection', False)
         pipeline.add(srtsrc)
         return (srtsrc, srtsrc)
+
+    def ndi(self, pipeline, settings):
+        raise Exception("Not Supported")
 
     def srt_remote(self, pipeline, settings):
         srtsrc = Gst.ElementFactory.make("srtsrc", None)
@@ -91,8 +95,15 @@ class TranslationTransportBuilder:
             TransportType.SRTREMOTE: self.srt_remote,
             TransportType.UDP: self.udp,
             TransportType.RTPUDP: self.rtpudp
+            TransportType.NDI: self.ndi
         }
         return builders[settings.transport](pipeline, settings)
+
+    def ndi(self, pipeline, settings):
+        ndisink = Gst.ElementFactory.make("ndisink", None)
+        ndisink.set_property('name', settings.ndi_name)
+        pipeline.add(ndisink)
+        return ndisink, ndisink
 
     def srt(self, pipeline, settings):
         srtsink = Gst.ElementFactory.make("srtsink", None)

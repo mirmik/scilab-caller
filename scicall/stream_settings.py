@@ -23,11 +23,13 @@ class TransportType(str, Enum):
     SRT = "srt(server)"
     UDP = "udp"
     RTPUDP = "rtp/udp"
+    NDI = "ndi"
 
 
 class VideoCodecType(str, Enum):
     MJPEG = "mjpeg",
     H264 = "h264",
+    NOCODEC = "nocodec",
 
 
 class AudioCodecType(str, Enum):
@@ -46,7 +48,8 @@ class StreamSettings:
                  codec=None,
                  ip=None,
                  port=None,
-                 mediatype=None
+                 mediatype=None,
+                 ndi_name=None
                  ):
         self.mode = mode
         self.device = device
@@ -55,6 +58,7 @@ class StreamSettings:
         self.ip = ip
         self.port = port
         self.mediatype = mediatype
+        self.ndi_name = ndi_name
 
 
 class MiddleSettings:

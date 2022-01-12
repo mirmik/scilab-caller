@@ -1,4 +1,5 @@
 import sys
+import time
 from gi.repository import GObject, Gst, GstVideo
 
 from PyQt5.QtWidgets import *
@@ -260,6 +261,8 @@ class StreamPipeline:
         print("on_error_message", msg.parse_error())
 
     def start(self):
+        self.pipeline.set_state(Gst.State.READY)
+        self.pipeline.set_state(Gst.State.PAUSED)
         self.pipeline.set_state(Gst.State.PLAYING)
 
     def on_sync_message(self, bus, msg):
@@ -276,9 +279,14 @@ class StreamPipeline:
         """Конец потока вызывает пересборку конвеера.
            Это решает некоторые проблемы srt стрима.
         """
-        self.stop()
-        self.make_pipeline(self.last_input_settings,
-                           self.last_translation_settings,
-                           self.last_middle_settings)
-        self.setup()
-        self.start()
+        print("eos handle")
+        self.pipeline.set_state(Gst.State.PAUSED)
+        self.pipeline.set_state(Gst.State.READY)
+        self.pipeline.set_state(Gst.State.PAUSED)
+        self.pipeline.set_state(Gst.State.PLAYING)
+        #self.stop()
+        #self.make_pipeline(self.last_input_settings,
+        #                   self.last_translation_settings,
+        #                   self.last_middle_settings)
+        #self.setup()
+        #self.start()

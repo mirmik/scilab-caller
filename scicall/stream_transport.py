@@ -5,6 +5,7 @@ from scicall.stream_settings import (
     AudioCodecType,
     MediaType
 )
+from scicall.util import pipeline_chain
 
 class TransportBuilder:
     def __init__(self):
@@ -21,19 +22,28 @@ class SourceTransportBuilder(TransportBuilder):
         builders = {
             TransportType.SRT: self.srt,
             TransportType.SRTREMOTE: self.srt_remote,
+            TransportType.RTPSRT: self.rtpsrt,
+            TransportType.RTPSRTREMOTE: self.rtpsrt_remote,
             TransportType.UDP: self.udp,
             TransportType.RTPUDP: self.rtpudp,
             TransportType.NDI: self.ndi
         }
         return builders[settings.transport](pipeline, settings)
 
+    def on_srt_caller_removed(self, srtsrc, a, pipeline):
+        print("on_srt_caller_removed", a, srtsrc, pipeline)
+
+    def on_srt_caller_added(self, srtsrc, a, pipeline):
+        print("on_srt_caller_added", a, srtsrc, pipeline)
+
     def srt(self, pipeline, settings):
         srtsrc = Gst.ElementFactory.make("srtsrc", None)
         srtsrc.set_property('uri', f"srt://:{settings.port}")
         srtsrc.set_property('wait-for-connection', False)
         srtsrc.set_property('latency', self.srt_latency)
-        pipeline.add(srtsrc)
-        return (srtsrc, srtsrc)
+        srtsrc.connect("caller-removed", self.on_srt_caller_removed)
+        srtsrc.connect("caller-added", self.on_srt_caller_added)
+        return pipeline_chain(pipeline, srtsrc)
 
     def ndi(self, pipeline, settings):
         raise Exception("Not Supported")
@@ -43,14 +53,12 @@ class SourceTransportBuilder(TransportBuilder):
         srtsrc.set_property('uri', f"srt://{settings.ip}:{settings.port}")
         srtsrc.set_property('wait-for-connection', False)
         srtsrc.set_property('latency', self.srt_latency)
-        pipeline.add(srtsrc)
-        return (srtsrc, srtsrc)
+        return pipeline_chain(pipeline, srtsrc)
 
     def udp(self, pipeline, settings):
         udpsrc = Gst.ElementFactory.make("udpsrc", None)
         udpsrc.set_property('port', settings.port)
-        pipeline.add(udpsrc)
-        return (udpsrc, udpsrc)
+        return pipeline_chain(pipeline, udpsrc)
 
     def rtpudp(self, pipeline, settings):
         udpsrc = Gst.ElementFactory.make("udpsrc", None)
@@ -62,19 +70,49 @@ class SourceTransportBuilder(TransportBuilder):
         rtpjpegdepay = Gst.ElementFactory.make(
             self.rtpcodecdepay(settings.codec), None)
         udpsrc.set_property('port', settings.port)
-        pipeline.add(udpsrc)
-        pipeline.add(rtpjpegdepay)
-        pipeline.add(jitterbuffer)
-        pipeline.add(q)
-        pipeline.add(capsfilter)
         udpsrc.link(capsfilter)
         capsfilter.link(jitterbuffer)
         jitterbuffer.link(rtpjpegdepay)
         rtpjpegdepay.link(q)
-        return (udpsrc, q)
+        return pipeline_chain(pipeline, udpsrc, capsfilter, jitterbuffer, rtpjpegdepay, q)
+
+    def rtpsrt(self, pipeline, settings):
+        srtsrc = Gst.ElementFactory.make("srtsrc", None)
+        srtsrc.set_property('uri', f"srt://:{settings.port}")
+        srtsrc.set_property('wait-for-connection', False)
+        srtsrc.set_property('latency', self.srt_latency)
+        srtsrc.connect("caller-removed", self.on_srt_caller_removed)
+        srtsrc.connect("caller-added", self.on_srt_caller_added)
+        capsfilter = self.make_capsfilter(settings.codec)
+        depay = self.make_depay(settings.codec)
+        q = Gst.ElementFactory.make("queue", None)
+        return pipeline_chain(pipeline, srtsrc, capsfilter, depay, q)
+
+    def rtpsrt_remote(self, pipeline, settings):
+        srtsrc = Gst.ElementFactory.make("srtsrc", None)
+        srtsrc.set_property('uri', f"srt://{settings.ip}:{settings.port}")
+        srtsrc.set_property('wait-for-connection', False)
+        srtsrc.set_property('latency', self.srt_latency)
+        capsfilter = self.make_capsfilter(settings.codec)
+        depay = self.make_depay(settings.codec)
+        q = Gst.ElementFactory.make("queue", None)
+        return pipeline_chain(pipeline, srtsrc, capsfilter, depay, q)
+
+    def make_capsfilter(self, codec):
+        caps = Gst.Caps.from_string(self.rtpcodecdepay_caps(codec))
+        capsfilter = Gst.ElementFactory.make('capsfilter', None)
+        capsfilter.set_property("caps", caps)
+        return capsfilter
+
+    def make_depay(self, codec):
+        depay = Gst.ElementFactory.make(self.rtpcodecdepay(codec), None)
+        return depay
+
 
     def rtpcodecdepay_caps(self, codec):
         return {
+            VideoCodecType.H264_TS: "application/x-rtp,media=video,clock-rate=90000,encoding-name=MP2T-ES",
+            VideoCodecType.H265: "application/x-rtp, media=video, clock-rate=90000, encoding-name=H265, payload=96",
             VideoCodecType.H264: "application/x-rtp, media=video, clock-rate=90000, encoding-name=H264, payload=96",
             VideoCodecType.MJPEG: "application/x-rtp, encoding-name=JPEG, payload=26",
             AudioCodecType.OPUS: "application/x-rtp, encoding-name=OPUS, payload=96"
@@ -82,7 +120,9 @@ class SourceTransportBuilder(TransportBuilder):
 
     def rtpcodecdepay(self, codec):
         return {
+            VideoCodecType.H264_TS: "rtpmp2tdepay",
             VideoCodecType.H264: "rtph264depay",
+            VideoCodecType.H265: "rtph265depay",
             VideoCodecType.MJPEG: "rtpjpegdepay",
             AudioCodecType.OPUS: "rtpopusdepay"
         }[codec]
@@ -99,6 +139,8 @@ class TranslationTransportBuilder(TransportBuilder):
         builders = {
             TransportType.SRT: self.srt,
             TransportType.SRTREMOTE: self.srt_remote,
+            TransportType.RTPSRT: self.rtpsrt,
+            TransportType.RTPSRTREMOTE: self.rtpsrt_remote,
             TransportType.UDP: self.udp,
             TransportType.RTPUDP: self.rtpudp,
             TransportType.NDI: self.ndi
@@ -138,6 +180,22 @@ class TranslationTransportBuilder(TransportBuilder):
         pipeline.add(srtsink)
         return srtsink, srtsink
 
+    def rtpsrt(self, pipeline, settings):
+        srtsink = Gst.ElementFactory.make("srtsink", None)
+        srtsink.set_property('uri', f"srt://:{settings.port}")
+        srtsink.set_property('wait-for-connection', False)
+        srtsink.set_property('latency', self.srt_latency)
+        rtpcodecpay = Gst.ElementFactory.make(self.rtpcodecpay(settings.codec), None)
+        return pipeline_chain(pipeline, rtpcodecpay, srtsink)
+
+    def rtpsrt_remote(self, pipeline, settings):
+        srtsink = Gst.ElementFactory.make("srtsink", None)
+        srtsink.set_property('uri', f"srt://{settings.ip}:{settings.port}")
+        srtsink.set_property('wait-for-connection', False)
+        srtsink.set_property('latency', self.srt_latency)
+        rtpcodecpay = Gst.ElementFactory.make(self.rtpcodecpay(settings.codec), None)
+        return pipeline_chain(pipeline, rtpcodecpay, srtsink)
+
     def udp(self, pipeline, settings):
         udpsink = Gst.ElementFactory.make("udpsink", None)
         udpsink.set_property('port', settings.port)
@@ -160,6 +218,8 @@ class TranslationTransportBuilder(TransportBuilder):
 
     def rtpcodecpay(self, codec):
         return {
+            VideoCodecType.H264_TS: "rtpmp2tpay",
+            VideoCodecType.H265: "rtph265pay",
             VideoCodecType.H264: "rtph264pay",
             VideoCodecType.MJPEG: "rtpjpegpay",
             AudioCodecType.OPUS: "rtpopuspay",

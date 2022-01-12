@@ -21,6 +21,8 @@ class TranslateMode(str, Enum):
 class TransportType(str, Enum):
     SRTREMOTE = "srt(client)"
     SRT = "srt(server)"
+    RTPSRTREMOTE = "rtp/srt(client)"
+    RTPSRT = "rtp/srt(server)"
     UDP = "udp"
     RTPUDP = "rtp/udp"
     NDI = "ndi"
@@ -29,6 +31,8 @@ class TransportType(str, Enum):
 class VideoCodecType(str, Enum):
     MJPEG = "mjpeg",
     H264 = "h264",
+    H264_TS = "h264_ts",
+    H265 = "h265",
     NOCODEC = "nocodec",
 
 

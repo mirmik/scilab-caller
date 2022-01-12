@@ -3,6 +3,7 @@ from scicall.stream_settings import (
     VideoCodecType,
     AudioCodecType,
 )
+from scicall.util import pipeline_chain
 
 
 class SourceCodecBuilder:
@@ -16,6 +17,8 @@ class SourceCodecBuilder:
         builders = {
             VideoCodecType.MJPEG: self.mjpeg,
             VideoCodecType.H264: self.h264,
+            VideoCodecType.H264_TS: self.h264_ts,
+            VideoCodecType.H265: self.h265,
             VideoCodecType.NOCODEC: self.nocodec,
             AudioCodecType.NOCODEC: self.nocodec,
             AudioCodecType.OPUS: self.opus,
@@ -51,6 +54,21 @@ class SourceCodecBuilder:
         h264parse.link(h264dec)
         return (h264parse, h264dec)
 
+    def h264_ts(self, pipeline, settings):
+        tsparse = Gst.ElementFactory.make("tsparse", None)
+        tsdemux = Gst.ElementFactory.make("tsdemux", None)
+        h264parse = Gst.ElementFactory.make("h264parse", None)
+        h264dec = Gst.ElementFactory.make("avdec_h264", None)
+        return pipeline_chain(pipeline, tsparse, tsdemux, h264parse, h264dec)
+
+    def h265(self, pipeline, settings):
+        h265parse = Gst.ElementFactory.make("h265parse", None)
+        h265dec = Gst.ElementFactory.make("avdec_h265", None)
+        pipeline.add(h265parse)
+        pipeline.add(h265dec)
+        h265parse.link(h265dec)
+        return (h265parse, h265dec)
+
 
 class TranslationCodecBuilder:
     """ Строитель кодировщика исходящего потока. 
@@ -63,6 +81,8 @@ class TranslationCodecBuilder:
         builders = {
             VideoCodecType.MJPEG: self.mjpeg,
             VideoCodecType.H264: self.h264,
+            VideoCodecType.H264_TS: self.h264_ts,
+            VideoCodecType.H265: self.h265,
             AudioCodecType.OPUS: self.opus,
             VideoCodecType.NOCODEC: self.nocodec,
             AudioCodecType.NOCODEC: self.nocodec
@@ -87,6 +107,26 @@ class TranslationCodecBuilder:
 
     def h264(self, pipeline, settings):
         h264enc = Gst.ElementFactory.make("x264enc", None)
+        convert = Gst.ElementFactory.make("videoconvert", None)
         h264enc.set_property('tune', "zerolatency")
         pipeline.add(h264enc)
-        return (h264enc, h264enc)
+        pipeline.add(convert)
+        convert.link(h264enc)
+        return (convert, h264enc)
+
+    def h264_ts(self, pipeline, settings):
+        h264enc = Gst.ElementFactory.make("x264enc", None)
+        h264parse = Gst.ElementFactory.make("h264parse", None)
+        convert = Gst.ElementFactory.make("videoconvert", None)
+        h264enc.set_property('tune', "zerolatency")
+        tsmux = Gst.ElementFactory.make("mpegtsmux", None)
+        return pipeline_chain(pipeline, convert, h264enc, h264parse, tsmux)
+
+    def h265(self, pipeline, settings):
+        h265enc = Gst.ElementFactory.make("x264enc", None)
+        convert = Gst.ElementFactory.make("videoconvert", None)
+        h265enc.set_property('tune', "zerolatency")
+        pipeline.add(h265enc)
+        pipeline.add(convert)
+        convert.link(h265enc)
+        return (convert, h265enc)

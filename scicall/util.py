@@ -98,3 +98,12 @@ def channel_audio_port(ch):
 
 def channel_control_port(ch):
     return PORT_BASE + ch * 3 + 0
+
+def pipeline_chain(pipeline, *args):
+    for el in args:
+        pipeline.add(el)
+
+    for i in range(len(args) - 1):
+        args[i].link(args[i+1])
+
+    return args[0], args[-1]

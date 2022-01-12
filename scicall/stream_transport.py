@@ -6,8 +6,11 @@ from scicall.stream_settings import (
     MediaType
 )
 
+class TransportBuilder:
+    def __init__(self):
+        self.srt_latency = 50
 
-class SourceTransportBuilder:
+class SourceTransportBuilder(TransportBuilder):
     """ Строитель приёмного каскада внешнего потока. 
 
             В зависимости от используемого протокола, создаёт на основании переданного 
@@ -28,6 +31,7 @@ class SourceTransportBuilder:
         srtsrc = Gst.ElementFactory.make("srtsrc", None)
         srtsrc.set_property('uri', f"srt://:{settings.port}")
         srtsrc.set_property('wait-for-connection', False)
+        srtsrc.set_property('latency', self.srt_latency)
         pipeline.add(srtsrc)
         return (srtsrc, srtsrc)
 
@@ -38,6 +42,7 @@ class SourceTransportBuilder:
         srtsrc = Gst.ElementFactory.make("srtsrc", None)
         srtsrc.set_property('uri', f"srt://{settings.ip}:{settings.port}")
         srtsrc.set_property('wait-for-connection', False)
+        srtsrc.set_property('latency', self.srt_latency)
         pipeline.add(srtsrc)
         return (srtsrc, srtsrc)
 
@@ -49,6 +54,7 @@ class SourceTransportBuilder:
 
     def rtpudp(self, pipeline, settings):
         udpsrc = Gst.ElementFactory.make("udpsrc", None)
+        jitterbuffer = Gst.ElementFactory.make("rtpjitterbuffer", None)
         q = Gst.ElementFactory.make("queue", None)
         caps = Gst.Caps.from_string(self.rtpcodecdepay_caps(settings.codec))
         capsfilter = Gst.ElementFactory.make('capsfilter', None)
@@ -58,10 +64,12 @@ class SourceTransportBuilder:
         udpsrc.set_property('port', settings.port)
         pipeline.add(udpsrc)
         pipeline.add(rtpjpegdepay)
+        pipeline.add(jitterbuffer)
         pipeline.add(q)
         pipeline.add(capsfilter)
         udpsrc.link(capsfilter)
-        capsfilter.link(rtpjpegdepay)
+        capsfilter.link(jitterbuffer)
+        jitterbuffer.link(rtpjpegdepay)
         rtpjpegdepay.link(q)
         return (udpsrc, q)
 
@@ -80,15 +88,12 @@ class SourceTransportBuilder:
         }[codec]
 
 
-class TranslationTransportBuilder:
+class TranslationTransportBuilder(TransportBuilder):
     """ Строитель передающего каскада исходящего потока. 
 
             В зависимости от используемого протокола, создаёт на основании переданного 
             объекта @settings, передающий каскад в конвеере @pipeline  
     """
-
-    def __init__(self):
-        self.srt_latency = 30
 
     def make(self, pipeline, settings):
         builders = {

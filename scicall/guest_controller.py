@@ -116,7 +116,7 @@ class ConnectionController(QWidget):
 		return StreamSettings(
 			mediatype = self.pipeline_mediatype(pipeline),
 			mode = SourceMode.STREAM,
-			transport = TransportType.RTPUDP,
+			transport = TransportType.SRT,
 			codec = self.pipeline_codec(pipeline),
 			port = self.pipeline_port(pipeline)
 		)

@@ -8,7 +8,7 @@ from scicall.stream_settings import (
 
 class TransportBuilder:
     def __init__(self):
-        self.srt_latency = 50
+        self.srt_latency = 40
 
 class SourceTransportBuilder(TransportBuilder):
     """ Строитель приёмного каскада внешнего потока. 

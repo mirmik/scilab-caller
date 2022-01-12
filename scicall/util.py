@@ -8,6 +8,7 @@ from scicall.device_adapter import (
     DefaultAudioDeviceAdapter
 )
 
+PORT_BASE = 10100
 MONITOR = None
 
 
@@ -88,3 +89,12 @@ def get_devices_list(mediatype):
         return get_video_captures_list()
     elif mediatype == MediaType.AUDIO:
         return get_audio_captures_list()
+
+def channel_video_port(ch):
+    return PORT_BASE + ch * 3 + 0
+
+def channel_audio_port(ch):
+    return PORT_BASE + ch * 3 + 1
+
+def channel_connect_port(ch):
+    return PORT_BASE + ch * 3 + 2

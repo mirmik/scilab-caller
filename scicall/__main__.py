@@ -9,6 +9,8 @@ from scicall.stream_settings import SourceMode, TranslateMode, MediaType
 from scicall.util import get_devices_list, start_device_monitor, stop_device_monitor
 from scicall.stream_pipeline import StreamPipeline
 from scicall.control_panel import ControlPanel
+from scicall.guest_caller import GuestCaller
+from scicall.guest_controller import GuestController
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -115,21 +117,48 @@ class MultiWorkZone(QWidget):
         self.zones.append(zone_audio)
         self.layout.addLayout(peer_layout)
 
+class ExpertWidget(QWidget):
+    def __init__(self):
+        self.workzone = MultiWorkZone()
+        self.workzone.add_zone()
+        self.workzone.add_zone()
+        self.layout = QVBoxLayout()
+        self.layout.addWidget(self.workzone)
+        self.setLayout(self.layout)
+
+class CentralWidget(QTabWidget):
+    def __init__():
+        self.userwdg = GuestCaller()
+        self.stantionwdg= GuestController()
+        self.experwdg = ExpertWidget()
+        self.addTab(self.userwdg)
+        self.addTab(self.stationwdg)
+        self.addTab(self.experwdg)
+        self.currentChanged.connect(self.update_sizes)
+
+    def update_sizes(index):
+        for i in range(self.count()):
+            if i != index:
+                self.widget(i).setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+
+        self.widget(index).setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.widget(index).resize(self.widget(index).minimumSizeHint())
+        self.widget(index).adjustSize()
+        resize(minimumSizeHint())
+        self.adjustSize()
 
 class MainWindow(QMainWindow):
     """Главное окно"""
 
     def __init__(self):
         super().__init__()
-        self.workzone = MultiWorkZone()
-
+        
         start_device_monitor()  # Монитор необходим, чтобы работали запросы списков устройств
-        self.workzone.add_zone()
-        self.workzone.add_zone()
+        self.cw = CentralWidget()
         stop_device_monitor()
 
         self.setGeometry(100, 100, 640, 480)
-        self.setCentralWidget(self.workzone)
+        self.setCentralWidget(self.cw)
 
 
 def main():

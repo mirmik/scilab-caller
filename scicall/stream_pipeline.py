@@ -62,11 +62,6 @@ class SourceBuilder:
         #jpegdec = Gst.ElementFactory.make("jpegdec", None)
         return pipeline_chain(pipeline, source, capsfilter)
 
-    def capture_audio_linux(self, pipeline, settings):
-        source = settings.device.make_gst_element()
-        pipeline.add(source)
-        return source, source
-
     def capture_video_windows(self, pipeline, settings):
         source = settings.device.make_gst_element()
         #Gst.ElementFactory.make("mfvideosrc", None)
@@ -77,23 +72,22 @@ class SourceBuilder:
         # source.link(capsfilter)
         return source, source
 
-    def capture_audio_windows(self, pipeline, settings):
+    def capture_audio(self, pipeline, settings):
         source = settings.device.make_gst_element()
-        #Gst.ElementFactory.make("wasapisrc", None)
-        #source.set_property("device", settings.device)
-        pipeline.add(source)
-        return source, source
+        level = Gst.ElementFactory.make("level", None)
+        level.set_property("message", True)
+        return pipeline_chain(pipeline, source, level)
 
     def capture(self, pipeline, settings):
         if sys.platform == "linux":
             return{
                 MediaType.VIDEO: self.capture_video_linux,
-                MediaType.AUDIO: self.capture_audio_linux
+                MediaType.AUDIO: self.capture_audio
             }[settings.mediatype](pipeline, settings)
         elif sys.platform == "win32":
             return{
                 MediaType.VIDEO: self.capture_video_windows,
-                MediaType.AUDIO: self.capture_audio_windows
+                MediaType.AUDIO: self.capture_audio
             }[settings.mediatype](pipeline, settings)
         else:
             raise Extension("platform is not supported")
@@ -171,9 +165,6 @@ class StreamPipeline:
         capsfilter.set_property("caps", caps)
         return capsfilter
 
-    def make_audio_middle_end(self, settings):
-        pass
-
     def make_video_middle_end(self, settings):
         if settings.display_enabled:
             videoscale = Gst.ElementFactory.make("videoscale", None)
@@ -189,11 +180,9 @@ class StreamPipeline:
     def make_audio_middle_end(self, settings):
         if settings.display_enabled:
             convert = Gst.ElementFactory.make("audioconvert", None)
-            sink = Gst.ElementFactory.make("autoaudiosink", None)
-            self.pipeline.add(convert)
-            self.pipeline.add(sink)
-            convert.link(sink)
-            return (convert, sink)
+            spectrascope = Gst.ElementFactory.make("spectrascope", None)
+            sink = Gst.ElementFactory.make("autovideosink", None)
+            return pipeline_chain(self.pipeline, convert, spectrascope, sink)
         else:
             sink = Gst.ElementFactory.make("fakesink", None)
             self.pipeline.add(sink)

@@ -45,7 +45,7 @@ class WorkZone(QWidget):
         if mediatype == MediaType.VIDEO:
             self.display = GstreamerDisplay()
         else:
-            self.display = QLabel("TODO: Монитор звукового ряда")
+            self.display = GstreamerDisplay()
 
         self.control_panel = ControlPanel(mediatype)
         self.pipeline = StreamPipeline(self.display)

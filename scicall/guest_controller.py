@@ -9,55 +9,75 @@ from scicall.display_widget import GstreamerDisplay
 from scicall.util import channel_control_port, channel_video_port, channel_audio_port
 
 from scicall.stream_settings import (
-    StreamSettings,
-    MiddleSettings,
-    SourceMode,
-    MediaType,
-    TranslateMode,
-    TransportType,
-    VideoCodecType,
-    AudioCodecType
+	StreamSettings,
+	MiddleSettings,
+	SourceMode,
+	MediaType,
+	TranslateMode,
+	TransportType,
+	VideoCodecType,
+	AudioCodecType
 )
 
 class ConnectionController(QWidget):
 	def __init__(self, number):
 		super().__init__()
+		self.video_connected = False
+		self.audio_connected = False
 		self.runned = False
 		self.channelno = number
 		self.display = GstreamerDisplay()
 		self.display.setFixedSize(200,160)
+		self.spectroscope = GstreamerDisplay()
+		self.spectroscope.setFixedSize(200,160)
 		self.layout = QHBoxLayout()
 		self.server = QTcpServer()
 		self.listener = None
 
-		self.channelno_lbl = QLabel(f"Канал: {self.channelno}")
-		self.control_port_lbl = QLabel(f"Контрольный порт: {self.control_port()}")
-		self.input_video_port_lbl = QLabel(f"Видео порт: {self.video_port()}")
-		self.input_audio_port_lbl = QLabel(f"Аудио порт: {self.audio_port()}")
-		self.ndi_video_name_lbl = QLabel(f"NDI видео: {self.ndi_video_name()}")
-		self.ndi_audio_name_lbl = QLabel(f"NDI аудио: {self.ndi_audio_name()}")
+		self.infowdg = QTextEdit()
 		self.enable_disable_button = QPushButton("Включить")
 		
 		self.info_layout = QVBoxLayout()
-		self.info_layout.addWidget(self.control_port_lbl)
-		self.info_layout.addWidget(self.input_video_port_lbl)
-		self.info_layout.addWidget(self.input_audio_port_lbl)
-		self.info_layout.addWidget(self.ndi_video_name_lbl)
-		self.info_layout.addWidget(self.ndi_audio_name_lbl)
+		self.info_layout.addWidget(self.infowdg)
 		self.info_layout.addStretch()
 
 		self.control_layout = QVBoxLayout()
 		self.control_layout.addWidget(self.enable_disable_button)
 
+		self.layout.addWidget(self.spectroscope)
 		self.layout.addWidget(self.display)
 		self.layout.addLayout(self.info_layout)
 		self.layout.addLayout(self.control_layout)
 
-		self.audio_pipeline = StreamPipeline(None)
+		self.audio_pipeline = StreamPipeline(self.spectroscope)
 		self.video_pipeline = StreamPipeline(self.display)
 
 		self.enable_disable_button.clicked.connect(self.enable_disable_clicked)
 		self.setLayout(self.layout)
+		self.update_info()
+
+		self.update_timer = QTimer(self)
+		self.update_timer.timeout.connect(self.update_if_need)
+		self.update_timer.start(100);
+
+	def update_if_need(self):
+		if self.need_update:
+			self.update_info()
+
+	def update_info(self):
+		self.need_update = False
+		self.infowdg.setText(f"""Контрольный порт: {self.control_port()}
+
+Видео:
+  порт: {self.video_port()}
+  NDI-поток: {self.ndi_video_name()}
+  состояние: {self.video_connected}
+
+Аудио:
+  порт: {self.audio_port()}
+  NDI-поток: {self.ndi_audio_name()}
+  состояние: {self.audio_connected}
+""")
 
 	def control_port(self):
 		return channel_control_port(self.channelno)
@@ -83,11 +103,13 @@ class ConnectionController(QWidget):
 			#self.unfreeze()
 			self.stop_pipeline()        	
 			self.enable_disable_button.setText("Включить")
+			self.update_info()
 
 		else:
 			#self.freeze()
 			self.start_pipeline()
 			self.enable_disable_button.setText("Отключить")
+			self.update_info()
 
 	def start_pipeline(self):
 		self.runned = True
@@ -112,13 +134,31 @@ class ConnectionController(QWidget):
 		for pipeline in [self.video_pipeline, self.audio_pipeline]:
 			pipeline.stop()
 
+	def on_srt_video_caller_removed(self, srtsrc, a, pipeline):
+		self.video_connected = False
+		self.need_update = True
+		
+	def on_srt_audio_caller_removed(self, srtsrc, a, pipeline):
+		self.audio_connected = False
+		self.need_update = True
+	
+	def on_srt_video_caller_added(self, srtsrc, a, pipeline):
+		self.video_connected = True
+		self.need_update = True
+	
+	def on_srt_audio_caller_added(self, srtsrc, a, pipeline):
+		self.audio_connected = True
+		self.need_update = True
+		
 	def input_settings(self, pipeline):
 		return StreamSettings(
 			mediatype = self.pipeline_mediatype(pipeline),
 			mode = SourceMode.STREAM,
 			transport = TransportType.SRT,
 			codec = self.pipeline_codec(pipeline),
-			port = self.pipeline_port(pipeline)
+			port = self.pipeline_port(pipeline),
+			on_srt_caller_removed = self.on_srt_video_caller_removed if pipeline is self.video_pipeline else self.on_srt_audio_caller_removed,
+			on_srt_caller_added = self.on_srt_video_caller_added if pipeline is self.video_pipeline else self.on_srt_audio_caller_added,
 		)
 
 	def output_settings(self, pipeline):
@@ -132,12 +172,12 @@ class ConnectionController(QWidget):
 
 	def middle_settings(self, pipeline):
 		return MiddleSettings(
-			display_enabled = self.video_pipeline is pipeline
+			display_enabled = True
 		)
 
 	def pipeline_codec(self, pipeline):
 		if pipeline is self.video_pipeline:
-			return VideoCodecType.MJPEG
+			return VideoCodecType.H264
 		else:
 			return AudioCodecType.OPUS
 

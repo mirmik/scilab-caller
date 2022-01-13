@@ -24,62 +24,28 @@ def stop_device_monitor():
     MONITOR = None
 
 
-def get_video_captures_list_windows():
+def get_video_captures_list(default=True):
     devs = MONITOR.get_devices()
     filtered_devs = [
         dev for dev in devs if dev.get_device_class() == "Video/Source"]
     defaults = [DefaultVideoDeviceAdapter()]
     adapters = [DeviceAdapterFabric().make_adapter(dev)
                 for dev in filtered_devs]
-    return defaults + adapters
+    if default:
+        adapters.insert(0, DefaultVideoDeviceAdapter())
+    return adapters
 
 
-def get_video_captures_list_linux():
-    devs = MONITOR.get_devices()
-    filtered_devs = [
-        dev for dev in devs if dev.get_device_class() == "Video/Source"]
-    defaults = [DefaultVideoDeviceAdapter()]
-    adapters = [DeviceAdapterFabric().make_adapter(dev)
-                for dev in filtered_devs]
-    return defaults + adapters
-
-
-def get_audio_captures_list_windows():
+def get_audio_captures_list(default=True):
     devs = MONITOR.get_devices()
     filtered_devs = [
         dev for dev in devs if dev.get_device_class() == "Audio/Source"]
-    defaults = [DefaultAudioDeviceAdapter()]
+    defaults = []
     adapters = [DeviceAdapterFabric().make_adapter(dev)
                 for dev in filtered_devs]
-    return defaults + adapters
-
-
-def get_audio_captures_list_linux():
-    devs = MONITOR.get_devices()
-    filtered_devs = [
-        dev for dev in devs if dev.get_device_class() == "Audio/Source"]
-    defaults = [DefaultAudioDeviceAdapter()]
-    adapters = [DeviceAdapterFabric().make_adapter(dev)
-                for dev in filtered_devs]
-    return defaults + adapters
-
-
-def get_video_captures_list():
-    if sys.platform == 'linux':
-        return get_video_captures_list_linux()
-    elif sys.platform == 'win32':
-        return get_video_captures_list_windows()
-    else:
-        raise Exception("unsupported platform")
-
-
-def get_audio_captures_list():
-    if sys.platform == 'linux':
-        return get_audio_captures_list_linux()
-    elif sys.platform == 'win32':
-        return get_audio_captures_list_windows()
-    else:
-        raise Exception("unsupported platform")
+    if default:
+        adapters.insert(0, DefaultAudioDeviceAdapter())
+    return adapters
 
 
 def get_devices_list(mediatype):

@@ -30,19 +30,19 @@ class SourceTransportBuilder(TransportBuilder):
         }
         return builders[settings.transport](pipeline, settings)
 
-    def on_srt_caller_removed(self, srtsrc, a, pipeline):
-        print("on_srt_caller_removed", a, srtsrc, pipeline)
-
-    def on_srt_caller_added(self, srtsrc, a, pipeline):
-        print("on_srt_caller_added", a, srtsrc, pipeline)
 
     def srt(self, pipeline, settings):
         srtsrc = Gst.ElementFactory.make("srtsrc", None)
         srtsrc.set_property('uri', f"srt://:{settings.port}")
         srtsrc.set_property('wait-for-connection', False)
         srtsrc.set_property('latency', self.srt_latency)
-        srtsrc.connect("caller-removed", self.on_srt_caller_removed)
-        srtsrc.connect("caller-added", self.on_srt_caller_added)
+    
+        if settings.on_srt_caller_removed:    
+            srtsrc.connect("caller-removed", settings.on_srt_caller_removed)
+        
+        if settings.on_srt_caller_added:    
+            srtsrc.connect("caller-added", settings.on_srt_caller_added)
+        
         return pipeline_chain(pipeline, srtsrc)
 
     def ndi(self, pipeline, settings):

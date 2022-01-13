@@ -6,27 +6,47 @@ from PyQt5.QtNetwork import *
 from scicall.stream_pipeline import StreamPipeline
 from scicall.display_widget import GstreamerDisplay
 from scicall.util import get_video_captures_list, get_audio_captures_list
+from scicall.stream_settings import (
+	StreamSettings,
+    SourceMode,
+    TranslateMode,
+    VideoCodecType,
+    AudioCodecType,
+    TransportType,
+    MediaType,
+    MiddleSettings
+)
+
+from scicall.util import channel_video_port, channel_audio_port
 
 class GuestCaller(QWidget):
 	""" Пользовательский виджет реализует удалённой станции. """
 
 	def __init__(self):
 		super().__init__()
-		self.videos = get_video_captures_list()
-		self.audios = get_audio_captures_list()
+		self.videos = get_video_captures_list(default=False)
+		self.audios = get_audio_captures_list(default=False)
+
+		for v in self.videos:
+			print(v.filtered_video_caps())
+
+		for v in self.audios:
+			print(v.audio_caps())
 
 		self.display_widget = GstreamerDisplay()
 		self.display_widget.setFixedSize(320,240)
+		self.spectroscope_widget = GstreamerDisplay()
+		self.spectroscope_widget.setFixedSize(320,240)
 		self.channel_list = QComboBox()
 		self.channel_list.addItems(["1", "2", "3"])
-		self.station_ip = QTextEdit("gfdgsdfg")
+		self.station_ip = QLineEdit("127.0.0.1")
 		self.video_source = QComboBox()
 		self.video_source.addItems([ r.user_readable_name() for r in self.videos ])
 		self.audio_source = QComboBox()
 		self.audio_source.addItems([ r.user_readable_name() for r in self.audios ])
 		self.video_enable_button = QPushButton("Видео")
 		self.audio_enable_button = QPushButton("Аудио")
-		self.status_label = QLabel("Hello")
+		self.status_label = QTextEdit("Hello")
 
 		self.main_layout = QHBoxLayout()
 		self.left_layout = QVBoxLayout()
@@ -35,29 +55,38 @@ class GuestCaller(QWidget):
 
 		#self.info_layout.addWidget(self.status_label)
 
-		self.control_layout.addWidget(QLabel("Номер канала:"), 0, 0)
-		self.control_layout.addWidget(QLabel("Источник видео:"), 1, 0)
-		self.control_layout.addWidget(QLabel("Источник звука:"), 2, 0)
-		self.control_layout.addWidget(self.channel_list, 0, 1)
-		self.control_layout.addWidget(self.video_source, 1, 1)
-		self.control_layout.addWidget(self.audio_source, 2, 1)
-		self.control_layout.addWidget(self.status_label, 3, 1)
+		self.control_layout.addWidget(QLabel("IP адрес сервера:"), 0, 0)
+		self.control_layout.addWidget(QLabel("Номер канала:"), 1, 0)
+		self.control_layout.addWidget(QLabel("Источник видео:"), 2, 0)
+		self.control_layout.addWidget(QLabel("Источник звука:"), 3, 0)
+		self.control_layout.addWidget(self.station_ip, 0, 1)
+		self.control_layout.addWidget(self.channel_list, 1, 1)
+		self.control_layout.addWidget(self.video_source, 2, 1)
+		self.control_layout.addWidget(self.audio_source, 3, 1)
+		self.control_layout.addWidget(self.status_label, 4, 1)
 
 		self.avpanel_layout.addWidget(self.video_enable_button)
-		self.avpanel_layout.addWidget(self.audio_enable_button)		
-		self.left_layout.addWidget(self.display_widget)
+		self.avpanel_layout.addWidget(self.audio_enable_button)
+		self.left_layout.addWidget(self.display_widget)		
+		self.left_layout.addWidget(self.spectroscope_widget)
 		self.left_layout.addLayout(self.avpanel_layout)
 		
 		self.main_layout.addLayout(self.left_layout)
 		self.main_layout.addLayout(self.control_layout)
 		
-		self.audio_pipeline = StreamPipeline(None)
+		self.audio_pipeline = StreamPipeline(self.spectroscope_widget)
 		self.video_pipeline = StreamPipeline(self.display_widget)
 		self.setLayout(self.main_layout)
-
-		self.video_started = False
-		self.audio_started = False
 		self.client = QTcpSocket()
+
+		self.audio_enable_button.clicked.connect(self.audio_clicked)
+		self.video_enable_button.clicked.connect(self.video_clicked)
+
+	def video_device(self):
+		return self.videos[self.video_source.currentIndex()]
+
+	def audio_device(self):
+		return self.audios[self.audio_source.currentIndex()]
 
 	def on_connect_button_clicked(self):
 		self.client.open(self.ip, channel_connect_port(self.channelno()))
@@ -72,20 +101,33 @@ class GuestCaller(QWidget):
 		print("on_disconnect")
 
 	def video_clicked(self):
-		if video_started:
+		if self.video_pipeline.runned():
 			self.stop_pipeline(self.video_pipeline)
-			self.video_started = False
 		else:
 			self.start_pipeline(self.video_pipeline)
-			self.video_started = True
+
+	def video_status(self):
+		if not self.video_pipeline.runned():
+			return "отключён"
+		return f"активен: порт{channel_video_port(self.channelno())}"
+
+	def audio_status(self):
+		if not self.audio_pipeline.runned():
+			return "отключён"
+		return f"активен: порт{channel_audio_port(self.channelno())}"
 
 	def audio_clicked(self):
-		if audio_started:
+		if self.audio_pipeline.runned():
 			self.stop_pipeline(self.audio_pipeline)
-			self.audio_started = False
 		else:
 			self.start_pipeline(self.audio_pipeline)
-			self.audio_started = True
+
+	def set_info(self):
+		self.status_label.setText(f"""Статус:
+Подключено: нет
+Видео: {self.video_status()}
+Аудио: {self.audio_status()}
+""")
 
 	def start_pipeline(self, pipeline):
 		pipeline.make_pipeline(
@@ -95,20 +137,31 @@ class GuestCaller(QWidget):
 		pipeline.setup()
 		pipeline.start()
 
+		self.set_info()
+
 	def stop_pipeline(self, pipeline):
 		pipeline.stop()
 
-	def pipeline_codec(self, codec):
+	def pipeline_codec(self, pipeline):
 		if pipeline is self.video_pipeline:
-			return VideoCodec.MJPEG
+			return VideoCodecType.H264
 		else:
-			return AudioCodec.OPUS
-			
-	def pipeline_port(self, codec):
+			return AudioCodecType.OPUS
+		
+	def pipeline_mediatype(self, pipeline):
+		if pipeline is self.video_pipeline:
+			return MediaType.VIDEO
+		else:
+			return MediaType.AUDIO
+
+	def pipeline_port(self, pipeline):
 		if pipeline is self.video_pipeline:
 			return channel_video_port(self.channelno())
 		else:
 			return channel_audio_port(self.channelno())
+
+	def channelno(self):
+		return int(self.channel_list.currentText()) - 1
 
 	def input_device(self, pipeline):
 		if pipeline is self.video_pipeline:
@@ -118,20 +171,23 @@ class GuestCaller(QWidget):
 
 	def input_settings(self, pipeline):
 		return StreamSettings(
-			mode = InputMode.CAPTURE,
+			mediatype= self.pipeline_mediatype(pipeline),
+			mode = SourceMode.CAPTURE,
 			device = self.input_device(pipeline)
 		)
 
 	def output_settings(self, pipeline):
 		return StreamSettings(
-			transport = TransportMode.UDPRTP,
+			mediatype= self.pipeline_mediatype(pipeline),
+			mode = TranslateMode.STREAM,
+			transport = TransportType.SRTREMOTE,
 			codec = self.pipeline_codec(pipeline),
 			port = self.pipeline_port(pipeline),
-			ip = self.station_ip()
+			ip = self.station_ip.text()
 		)		
 
 	def middle_settings(self, pipeline):
 		return MiddleSettings(
-			display_enabled = self.video_pipeline is pipeline
+			display_enabled = True
 		)
 	

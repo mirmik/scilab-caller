@@ -1,7 +1,27 @@
 import os
 import sys
+import re
 from gi.repository import GObject, Gst, GstVideo
 
+class SizeCaps:
+    def __init__(self, caps):
+        self.caps = caps
+
+    def width(self):
+        v = re.findall("width=\(int\)[0-9]+", self.caps)[0]
+        v = re.findall("[0-9]+", v)[0]
+        return int(v)
+
+    def height(self):
+        v = re.findall("width=\(int\)[0-9]+", self.caps)[0]
+        v = re.findall("[0-9]+", v)[0]
+        return int(v)
+
+    def sizestr(self):
+        return str(self.width()) + "x" + str(self.height())  
+
+    def __repr__(self):
+        return self.sizestr()
 
 class DeviceAdapter:
     """ Адаптер для получения доступа к объектом устройств разных типов """
@@ -10,11 +30,26 @@ class DeviceAdapter:
         self.gstdevice = gstdevice
 
     def user_readable_name(self):
-        return "TODO: user_readable_name"
+        return self.gstdevice.get_display_name()
 
     def make_gst_element(self):
         return Gst.ElementFactory.make("fakesrc", None)
 
+    def has_framerate30(self, x):
+        afrate = re.findall("framerate=\(fraction\)(\{.*\}|[0-9]*/[0-9]*)", x)[0]
+        return "30/1" in afrate
+
+    def filtered_video_caps(self):
+        caps = self.gstdevice.get_caps()
+        strcaps = caps.to_string()
+        splitted = strcaps.split(";")
+        xrawcaps = [ x for x in splitted if "x-raw" in x]
+        frated = [ SizeCaps(x) for x in xrawcaps if self.has_framerate30(x)]
+        return frated
+
+    def audio_caps(self):
+        caps = self.gstdevice.get_caps().to_string()
+        return caps
 
 class DefaultVideoDeviceAdapter(DeviceAdapter):
     def __init__(self):
@@ -49,8 +84,8 @@ class DefaultAudioDeviceAdapter(DeviceAdapter):
 
 
 class GstKsDeviceAdapter(DeviceAdapter):
-    def user_readable_name(self):
-        return self.gstdevice.get_name()
+    #def user_readable_name(self):
+    #    return self.gstdevice.get_name()
 
     def make_gst_element(self):
         ksname = self.gstdevice.get_name()
@@ -61,16 +96,16 @@ class GstKsDeviceAdapter(DeviceAdapter):
 
 
 class GstDirectSoundSrcDeviceAdapter(DeviceAdapter):
-    def user_readable_name(self):
-        return self.gstdevice.get_name()
+    #def user_readable_name(self):
+    #    return self.gstdevice.get_name()
 
     def make_gst_element(self):
         raise Exception("TODO: GstDirectSoundSrcDevice")
 
 
 class GstWasapiDeviceAdapter(DeviceAdapter):
-    def user_readable_name(self):
-        return self.gstdevice.get_name()
+    #def user_readable_name(self):
+    #    return self.gstdevice.get_name()
 
     def make_gst_element(self):
         el = Gst.ElementFactory.make("wasapisrc", None)
@@ -80,8 +115,8 @@ class GstWasapiDeviceAdapter(DeviceAdapter):
 
 
 class GstV4l2DeviceAdapter(DeviceAdapter):
-    def user_readable_name(self):
-        return self.gstdevice.get_name()
+    #def user_readable_name(self):
+    #    return self.gstdevice.get_name()
 
     def make_gst_element(self):
         el = Gst.ElementFactory.make("v4l2src", None)
@@ -91,13 +126,12 @@ class GstV4l2DeviceAdapter(DeviceAdapter):
 
 
 class GstAlsaDeviceAdapter(DeviceAdapter):
-    def user_readable_name(self):
-        return self.gstdevice.get_name()
+    #def user_readable_name(self):
+    #    return self.gstdevice.get_name()
 
     def make_gst_element(self):
         el = Gst.ElementFactory.make("alsasrc", None)
-        el.set_property(
-            "device", self.gstdevice.get_properties().get_string("device.path"))
+        # TODO : MIC choise
         return el
 
 

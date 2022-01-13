@@ -54,8 +54,10 @@ class StreamSettings:
                  ip=None,
                  port=None,
                  mediatype=None,
-                 ndi_name=None
-                 ):
+                 ndi_name=None,
+                 on_srt_caller_removed=None,
+                 on_srt_caller_added=None
+):
         self.mode = mode
         self.device = device
         self.transport = transport
@@ -64,6 +66,8 @@ class StreamSettings:
         self.port = port
         self.mediatype = mediatype
         self.ndi_name = ndi_name
+        self.on_srt_caller_added = on_srt_caller_added
+        self.on_srt_caller_removed = on_srt_caller_removed
 
 
 class MiddleSettings:

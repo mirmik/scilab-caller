@@ -6,7 +6,7 @@ gi.require_version('GstVideo', '1.0')
 from gi.repository import GObject, Gst, GstVideo
 
 from scicall.stream_settings import SourceMode, TranslateMode, MediaType
-from scicall.util import get_devices_list, start_device_monitor, stop_device_monitor
+from scicall.util import get_filtered_devices_list, start_device_monitor, stop_device_monitor
 from scicall.stream_pipeline import StreamPipeline
 from scicall.control_panel import ControlPanel
 from scicall.guest_caller import GuestCaller
@@ -56,7 +56,7 @@ class WorkZone(QWidget):
         self.control_panel.enable_disable_button.clicked.connect(
             self.enable_disable_clicked)
 
-        captures = get_devices_list(mediatype)
+        captures = get_filtered_devices_list(mediatype)
         self.control_panel.set_devices_list(captures)
 
     def enable_disable_clicked(self):
@@ -173,6 +173,10 @@ class MainWindow(QMainWindow):
 
 def main():
     Gst.init(sys.argv)
+    #Gst.debug_set_active(True)
+    #Gst.debug_set_default_threshold(3)
+    #GObject.threads_init()
+
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()

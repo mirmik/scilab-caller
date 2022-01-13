@@ -9,7 +9,7 @@ from scicall.util import pipeline_chain
 
 class TransportBuilder:
     def __init__(self):
-        self.srt_latency = 20
+        self.srt_latency = 60
 
 class SourceTransportBuilder(TransportBuilder):
     """ Строитель приёмного каскада внешнего потока. 
@@ -75,6 +75,11 @@ class SourceTransportBuilder(TransportBuilder):
         jitterbuffer.link(rtpjpegdepay)
         rtpjpegdepay.link(q)
         return pipeline_chain(pipeline, udpsrc, capsfilter, jitterbuffer, rtpjpegdepay, q)
+
+    def on_srt_caller_removed(self):
+        print("On srt caller removed")
+    def on_srt_caller_added(self):
+        print("On srt caller added")
 
     def rtpsrt(self, pipeline, settings):
         srtsrc = Gst.ElementFactory.make("srtsrc", None)
@@ -154,15 +159,22 @@ class TranslationTransportBuilder(TransportBuilder):
             return "audioconvert"
 
     def ndi(self, pipeline, settings):
-        converter = Gst.ElementFactory.make(self.converter(settings.mediatype), None)
-        videoscale = Gst.ElementFactory.make("videoscale", None)
-        #q = Gst.ElementFactory.make("queue", None)
-        ndisink = Gst.ElementFactory.make("ndisink", None)
-        caps = Gst.Caps.from_string("video/x-raw,format=UYVY,width=800,height=600")
-        capsfilter = Gst.ElementFactory.make('capsfilter', None)
-        capsfilter.set_property("caps", caps)
-        ndisink.set_property('ndi-name', settings.ndi_name)
-        return pipeline_chain(pipeline, converter, videoscale, capsfilter, ndisink) 
+
+        if settings.mediatype == MediaType.VIDEO:
+            converter = Gst.ElementFactory.make(self.converter(settings.mediatype), None)
+            videoscale = Gst.ElementFactory.make("videoscale", None)
+            ndisink = Gst.ElementFactory.make("ndisink", None)
+            caps = Gst.Caps.from_string("video/x-raw,format=UYVY,width=800,height=600")
+            capsfilter = Gst.ElementFactory.make('capsfilter', None)
+            capsfilter.set_property("caps", caps)        
+            ndisink.set_property('ndi-name', settings.ndi_name)
+            return pipeline_chain(pipeline, converter, videoscale, capsfilter, ndisink) 
+
+        else:
+            converter = Gst.ElementFactory.make(self.converter(settings.mediatype), None)
+            ndisink = Gst.ElementFactory.make("ndisink", None)
+            ndisink.set_property('ndi-name', settings.ndi_name)
+            return pipeline_chain(pipeline, converter, ndisink)
 
     def srt(self, pipeline, settings):
         srtsink = Gst.ElementFactory.make("srtsink", None)

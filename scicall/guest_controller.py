@@ -2,6 +2,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtNetwork import *
+from gi.repository import GObject, Gst, GstVideo
 
 from scicall.stream_pipeline import StreamPipeline
 from scicall.display_widget import GstreamerDisplay
@@ -113,11 +114,11 @@ class ConnectionController(QWidget):
 
 	def start_pipeline(self):
 		self.runned = True
-		self.video_pipeline.make_pipeline(
+		self.raw_video_pipeline = self.video_pipeline.make_pipeline(
 			self.input_settings(self.video_pipeline),
 			self.output_settings(self.video_pipeline),
 			self.middle_settings(self.video_pipeline))
-		self.audio_pipeline.make_pipeline(
+		self.raw_audio_pipeline = self.audio_pipeline.make_pipeline(
 			self.input_settings(self.audio_pipeline),
 			self.output_settings(self.audio_pipeline),
 			self.middle_settings(self.audio_pipeline))
@@ -135,18 +136,30 @@ class ConnectionController(QWidget):
 			pipeline.stop()
 
 	def on_srt_video_caller_removed(self, srtsrc, a, pipeline):
+		print("ON_SRT_VIDEO_REMOVE")
 		self.video_connected = False
 		self.need_update = True
+		self.raw_video_pipeline.set_state(Gst.State.PAUSED)
+		self.raw_video_pipeline.set_state(Gst.State.READY)
+		self.raw_video_pipeline.set_state(Gst.State.PAUSED)
+		self.raw_video_pipeline.set_state(Gst.State.PLAYING)
 		
 	def on_srt_audio_caller_removed(self, srtsrc, a, pipeline):
+		print("ON_SRT_AUDIO_REMOVE")
 		self.audio_connected = False
 		self.need_update = True
+		self.raw_audio_pipeline.set_state(Gst.State.PAUSED)
+		self.raw_audio_pipeline.set_state(Gst.State.READY)
+		self.raw_audio_pipeline.set_state(Gst.State.PAUSED)
+		self.raw_audio_pipeline.set_state(Gst.State.PLAYING)
 	
 	def on_srt_video_caller_added(self, srtsrc, a, pipeline):
+		print("ON_SRT_VIDEO_ADDED")
 		self.video_connected = True
 		self.need_update = True
 	
 	def on_srt_audio_caller_added(self, srtsrc, a, pipeline):
+		print("ON_SRT_AUDIO_ADDED")
 		self.audio_connected = True
 		self.need_update = True
 		

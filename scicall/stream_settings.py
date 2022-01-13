@@ -14,7 +14,6 @@ class SourceMode(str, Enum):
 
 class TranslateMode(str, Enum):
     NOTRANS = "Нет"
-    STATION = "Автомат."
     STREAM = "Поток"
 
 

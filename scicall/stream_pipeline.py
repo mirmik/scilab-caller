@@ -59,24 +59,17 @@ class SourceBuilder:
             pipeline.add(source)
             return source, source
         capsfilter = self.make_source_capsfilter()
-        #jpegdec = Gst.ElementFactory.make("jpegdec", None)
         return pipeline_chain(pipeline, source, capsfilter)
 
     def capture_video_windows(self, pipeline, settings):
         source = settings.device.make_gst_element()
-        #Gst.ElementFactory.make("mfvideosrc", None)
-        #capsfilter = self.make_source_capsfilter()
-        #source.set_property("device", settings.device)
         pipeline.add(source)
-        # pipeline.add(capsfilter)
-        # source.link(capsfilter)
         return source, source
 
     def capture_audio(self, pipeline, settings):
         source = settings.device.make_gst_element()
-        level = Gst.ElementFactory.make("level", None)
-        level.set_property("message", True)
-        return pipeline_chain(pipeline, source, level)
+        aconvert = Gst.ElementFactory.make("audioconvert", None)
+        return pipeline_chain(pipeline, source, aconvert)
 
     def capture(self, pipeline, settings):
         if sys.platform == "linux":
@@ -111,7 +104,6 @@ class TranslationBuilder:
     def make(self, pipeline, settings):
         builders = {
             TranslateMode.NOTRANS: self.fake,
-            TranslateMode.STATION: self.station,
             TranslateMode.STREAM: self.stream,
         }
         return builders[settings.mode](pipeline, settings)
@@ -126,15 +118,6 @@ class TranslationBuilder:
         trans_src, trans_sink = TranslationTransportBuilder().make(pipeline, settings)
         codec_sink.link(trans_src)
         return codec_src, trans_sink
-
-    def station(self, pipeline, settings):
-        msgBox = QMessageBox()
-        msgBox.setWindowTitle("Неоконченное строительство")
-        msgBox.setText(
-            "Режим автоматического согласования портов в разработке.")
-        msgBox.exec()
-        return self.fake(pipeline, settings)
-
 
 class StreamPipeline:
     """Класс отвечает за строительство работы каскада gstreamer и инкапсулирует
@@ -170,6 +153,7 @@ class StreamPipeline:
             videoscale = Gst.ElementFactory.make("videoscale", None)
             videoconvert = Gst.ElementFactory.make("videoconvert", None)
             sink = Gst.ElementFactory.make("autovideosink", None)
+            sink.set_property("sync", False)
             sink_capsfilter = self.make_video_feedback_capsfilter()
             return pipeline_chain(self.pipeline, videoscale, videoconvert, sink_capsfilter, sink)
         else:
@@ -181,8 +165,9 @@ class StreamPipeline:
         if settings.display_enabled:
             convert = Gst.ElementFactory.make("audioconvert", None)
             spectrascope = Gst.ElementFactory.make("spectrascope", None)
+            vconvert = Gst.ElementFactory.make("videoconvert", None)
             sink = Gst.ElementFactory.make("autovideosink", None)
-            return pipeline_chain(self.pipeline, convert, spectrascope, sink)
+            return pipeline_chain(self.pipeline, convert, spectrascope, vconvert, sink)
         else:
             sink = Gst.ElementFactory.make("fakesink", None)
             self.pipeline.add(sink)
@@ -226,6 +211,7 @@ class StreamPipeline:
         self.middle_src = middle_src
 
         self.link_pipeline()
+        return self.pipeline
 
     def runned(self):
         return self.pipeline is not None
@@ -235,10 +221,9 @@ class StreamPipeline:
 
     def setup(self):
         """Подготовка сконструированного конвеера к работе."""
-        self.state = Gst.State.NULL
         self.bus = self.pipeline.get_bus()
         self.bus.add_signal_watch()
-        self.bus.add_watch(0, self.bus_callback, None)
+        #self.bus.add_watch(0, self.bus_callback, None)
         self.bus.enable_sync_message_emission()
         self.bus.connect('sync-message::element', self.on_sync_message)
         self.bus.connect('message::error', self.on_error_message)
@@ -259,6 +244,8 @@ class StreamPipeline:
 
     def stop(self):
         if self.pipeline:
+            self.pipeline.set_state(Gst.State.PAUSED)
+            self.pipeline.set_state(Gst.State.READY)
             self.pipeline.set_state(Gst.State.NULL)
         self.pipeline = None
 

@@ -25,7 +25,7 @@ class GuestCaller(QWidget):
 	def __init__(self):
 		super().__init__()
 		self.videos = get_video_captures_list(default=False)
-		self.audios = get_audio_captures_list(default=False)
+		self.audios = [ a for a in get_audio_captures_list(default=False) if a.is_supported() ]
 
 		for v in self.videos:
 			print(v.filtered_video_caps())

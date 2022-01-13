@@ -25,6 +25,8 @@ class SizeCaps:
 
 class DeviceAdapter:
     """ Адаптер для получения доступа к объектом устройств разных типов """
+    def is_supported(self):
+        return True
 
     def __init__(self, gstdevice):
         self.gstdevice = gstdevice
@@ -36,7 +38,7 @@ class DeviceAdapter:
         return Gst.ElementFactory.make("fakesrc", None)
 
     def has_framerate30(self, x):
-        afrate = re.findall("framerate=\(fraction\)(\{.*\}|[0-9]*/[0-9]*)", x)[0]
+        afrate = re.findall("framerate=\(fraction\)(\{.*\}|\[.*\]|[0-9]*/[0-9]*)", x)[0]
         return "30/1" in afrate
 
     def filtered_video_caps(self):
@@ -98,6 +100,8 @@ class GstKsDeviceAdapter(DeviceAdapter):
 class GstDirectSoundSrcDeviceAdapter(DeviceAdapter):
     #def user_readable_name(self):
     #    return self.gstdevice.get_name()
+    def is_supported(self):
+        return False
 
     def make_gst_element(self):
         raise Exception("TODO: GstDirectSoundSrcDevice")

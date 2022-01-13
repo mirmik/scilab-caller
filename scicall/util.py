@@ -48,13 +48,21 @@ def get_audio_captures_list(default=True):
     return adapters
 
 
-def get_devices_list(mediatype):
+def get_devices_list(mediatype, default=True):
     """ К счастью, gststreamer умеет добывать списки устройств,
         и довольно много о них знает. """
     if mediatype == MediaType.VIDEO:
-        return get_video_captures_list()
+        return get_video_captures_list(default)
     elif mediatype == MediaType.AUDIO:
-        return get_audio_captures_list()
+        return get_audio_captures_list(default)
+
+def get_filtered_devices_list(mediatype, default=True):
+    """ К счастью, gststreamer умеет добывать списки устройств,
+        и довольно много о них знает. """
+    if mediatype == MediaType.VIDEO:
+        return get_video_captures_list(default)
+    elif mediatype == MediaType.AUDIO:
+        return [ a for a in get_audio_captures_list(default) if a.is_supported() ]
 
 def channel_video_port(ch):
     return PORT_BASE + ch * 3 + 1

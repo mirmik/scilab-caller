@@ -20,6 +20,7 @@ class SourceCodecBuilder(CodecBuilder):
         builders = {
             VideoCodecType.MJPEG: self.mjpeg,
             VideoCodecType.H264: self.h264,
+            VideoCodecType.H264_NVIDIA: self.h264_nvidia,
             VideoCodecType.H264_TS: self.h264_ts,
             VideoCodecType.H265: self.h265,
             VideoCodecType.NOCODEC: self.nocodec,
@@ -52,10 +53,12 @@ class SourceCodecBuilder(CodecBuilder):
     def h264(self, pipeline, settings):
         h264parse = Gst.ElementFactory.make("h264parse", None)
         h264dec = Gst.ElementFactory.make("avdec_h264", None)
-        pipeline.add(h264parse)
-        pipeline.add(h264dec)
-        h264parse.link(h264dec)
-        return (h264parse, h264dec)
+        return pipeline_chain(pipeline, h264parse, h264dec)
+
+    def h264_nvidia(self, pipeline, settings):
+        h264parse = Gst.ElementFactory.make("h264parse", None)
+        h264dec = Gst.ElementFactory.make("nvh264dec", None)
+        return pipeline_chain(pipeline, h264parse, h264dec)
 
     def h264_ts(self, pipeline, settings):
         tsparse = Gst.ElementFactory.make("tsparse", None)
@@ -84,6 +87,7 @@ class TranslationCodecBuilder(CodecBuilder):
         builders = {
             VideoCodecType.MJPEG: self.mjpeg,
             VideoCodecType.H264: self.h264,
+            VideoCodecType.H264_NVIDIA: self.h264_nvidia,
             VideoCodecType.H264_TS: self.h264_ts,
             VideoCodecType.H265: self.h265,
             AudioCodecType.OPUS: self.opus,
@@ -113,6 +117,13 @@ class TranslationCodecBuilder(CodecBuilder):
         #h264parse = Gst.ElementFactory.make("h264parse", None)
         convert = Gst.ElementFactory.make("videoconvert", None)
         h264enc.set_property('tune', "zerolatency")
+        return pipeline_chain(pipeline, convert, h264enc)
+
+    def h264_nvidia(self, pipeline, settings):
+        h264enc = Gst.ElementFactory.make("nvh264enc", None)
+        #h264parse = Gst.ElementFactory.make("h264parse", None)
+        convert = Gst.ElementFactory.make("videoconvert", None)
+        #h264enc.set_property('tune', "zerolatency")
         return pipeline_chain(pipeline, convert, h264enc)
 
     def h264_ts(self, pipeline, settings):

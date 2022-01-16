@@ -30,6 +30,7 @@ class TransportType(str, Enum):
 class VideoCodecType(str, Enum):
     MJPEG = "mjpeg",
     H264 = "h264",
+    H264_NVIDIA = "h264_nvidia",
     H264_TS = "h264_ts",
     H265 = "h265",
     NOCODEC = "nocodec",

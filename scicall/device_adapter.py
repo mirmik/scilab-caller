@@ -98,19 +98,17 @@ class GstKsDeviceAdapter(DeviceAdapter):
 
 
 class GstDirectSoundSrcDeviceAdapter(DeviceAdapter):
-    #def user_readable_name(self):
-    #    return self.gstdevice.get_name()
     def is_supported(self):
-        return False
+        return True
 
     def make_gst_element(self):
-        raise Exception("TODO: GstDirectSoundSrcDevice")
+        el = Gst.ElementFactory.make("directsoundsrc", None)
+        el.set_property(
+            "device", self.gstdevice.get_properties().get_string("device.strid"))
+        return el
 
 
 class GstWasapiDeviceAdapter(DeviceAdapter):
-    #def user_readable_name(self):
-    #    return self.gstdevice.get_name()
-
     def make_gst_element(self):
         el = Gst.ElementFactory.make("wasapisrc", None)
         el.set_property(
@@ -119,9 +117,6 @@ class GstWasapiDeviceAdapter(DeviceAdapter):
 
 
 class GstV4l2DeviceAdapter(DeviceAdapter):
-    #def user_readable_name(self):
-    #    return self.gstdevice.get_name()
-
     def make_gst_element(self):
         el = Gst.ElementFactory.make("v4l2src", None)
         el.set_property(
@@ -130,9 +125,6 @@ class GstV4l2DeviceAdapter(DeviceAdapter):
 
 
 class GstAlsaDeviceAdapter(DeviceAdapter):
-    #def user_readable_name(self):
-    #    return self.gstdevice.get_name()
-
     def make_gst_element(self):
         el = Gst.ElementFactory.make("alsasrc", None)
         # TODO : MIC choise

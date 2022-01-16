@@ -180,12 +180,15 @@ class StreamPipeline(QObject):
         return Gst.FlowReturn.OK
 
     def sample_flow_control(self):
-        if self.flow_runned is False and time.time() - self.last_sample < 0.1:
+        if self.flow_runned is False and time.time() - self.last_sample < 0.3:
+            print("Connect?")
             self.flow_runned = True
+            self.last_sample = time.time()
             return
 
-        if self.flow_runned is True and time.time() - self.last_sample > 0.1:
+        if self.flow_runned is True and time.time() - self.last_sample > 0.3:
             self.flow_runned = False
+            print("Disconnect?")
             if self.last_input_settings.transport == TransportType.SRT:
                 self.srt_disconnect()
             return
@@ -204,6 +207,10 @@ class StreamPipeline(QObject):
         queue2 = Gst.ElementFactory.make("queue", None)
         queue3 = Gst.ElementFactory.make("queue", None)
 
+        for q in [queue1, queue2, queue3]:
+            q.set_property("max-size-bytes", 100000) 
+            q.set_property("max-size-buffers", 0) 
+
         self.pipeline.add(appsink)
         self.pipeline.add(tee)
         self.pipeline.add(queue1)
@@ -213,6 +220,9 @@ class StreamPipeline(QObject):
         tee.link(queue3)
         queue3.link(appsink)
         appsink.set_property("sync", True)
+        appsink.set_property("emit-signals", True)
+        appsink.set_property("max-buffers", 1)
+        appsink.set_property("drop", True)
         appsink.set_property("emit-signals", True)
         appsink.connect("new-sample", self.new_sample, None)
 

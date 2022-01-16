@@ -34,7 +34,7 @@ class SourceTransportBuilder(TransportBuilder):
     def srt(self, pipeline, settings):
         srtsrc = Gst.ElementFactory.make("srtsrc", None)
         srtsrc.set_property('uri', f"srt://:{settings.port}")
-        srtsrc.set_property('wait-for-connection', False)
+        srtsrc.set_property('wait-for-connection', True)
         srtsrc.set_property('latency', self.srt_latency)
     
         if settings.on_srt_caller_removed:    
@@ -51,7 +51,7 @@ class SourceTransportBuilder(TransportBuilder):
     def srt_remote(self, pipeline, settings):
         srtsrc = Gst.ElementFactory.make("srtsrc", None)
         srtsrc.set_property('uri', f"srt://{settings.ip}:{settings.port}")
-        srtsrc.set_property('wait-for-connection', False)
+        srtsrc.set_property('wait-for-connection', True)
         srtsrc.set_property('latency', self.srt_latency)
         return pipeline_chain(pipeline, srtsrc)
 
@@ -84,7 +84,7 @@ class SourceTransportBuilder(TransportBuilder):
     def rtpsrt(self, pipeline, settings):
         srtsrc = Gst.ElementFactory.make("srtsrc", None)
         srtsrc.set_property('uri', f"srt://:{settings.port}")
-        srtsrc.set_property('wait-for-connection', False)
+        srtsrc.set_property('wait-for-connection', True)
         srtsrc.set_property('latency', self.srt_latency)
         srtsrc.connect("caller-removed", self.on_srt_caller_removed)
         srtsrc.connect("caller-added", self.on_srt_caller_added)
@@ -96,7 +96,7 @@ class SourceTransportBuilder(TransportBuilder):
     def rtpsrt_remote(self, pipeline, settings):
         srtsrc = Gst.ElementFactory.make("srtsrc", None)
         srtsrc.set_property('uri', f"srt://{settings.ip}:{settings.port}")
-        srtsrc.set_property('wait-for-connection', False)
+        srtsrc.set_property('wait-for-connection', True)
         srtsrc.set_property('latency', self.srt_latency)
         capsfilter = self.make_capsfilter(settings.codec)
         depay = self.make_depay(settings.codec)

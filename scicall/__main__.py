@@ -175,7 +175,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         #invoke_destructors()
-        #os._exit(0)
+        os._exit(0)
         pass
 
 def srt_disconnect():

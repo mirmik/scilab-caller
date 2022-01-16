@@ -139,19 +139,19 @@ class ConnectionController(QWidget):
 		print("ON_SRT_VIDEO_REMOVE")
 		self.video_connected = False
 		self.need_update = True
-		self.raw_video_pipeline.set_state(Gst.State.PAUSED)
-		self.raw_video_pipeline.set_state(Gst.State.READY)
-		self.raw_video_pipeline.set_state(Gst.State.PAUSED)
-		self.raw_video_pipeline.set_state(Gst.State.PLAYING)
+		#self.raw_video_pipeline.set_state(Gst.State.PAUSED)
+		#self.raw_video_pipeline.set_state(Gst.State.READY)
+		#self.raw_video_pipeline.set_state(Gst.State.PAUSED)
+		#self.raw_video_pipeline.set_state(Gst.State.PLAYING)
 		
 	def on_srt_audio_caller_removed(self, srtsrc, a, pipeline):
 		print("ON_SRT_AUDIO_REMOVE")
 		self.audio_connected = False
 		self.need_update = True
-		self.raw_audio_pipeline.set_state(Gst.State.PAUSED)
-		self.raw_audio_pipeline.set_state(Gst.State.READY)
-		self.raw_audio_pipeline.set_state(Gst.State.PAUSED)
-		self.raw_audio_pipeline.set_state(Gst.State.PLAYING)
+		#self.raw_audio_pipeline.set_state(Gst.State.PAUSED)
+		#self.raw_audio_pipeline.set_state(Gst.State.READY)
+		#self.raw_audio_pipeline.set_state(Gst.State.PAUSED)
+		#self.raw_audio_pipeline.set_state(Gst.State.PLAYING)
 	
 	def on_srt_video_caller_added(self, srtsrc, a, pipeline):
 		print("ON_SRT_VIDEO_ADDED")
@@ -170,8 +170,8 @@ class ConnectionController(QWidget):
 			transport = TransportType.SRT,
 			codec = self.pipeline_codec(pipeline),
 			port = self.pipeline_port(pipeline),
-			on_srt_caller_removed = self.on_srt_video_caller_removed if pipeline is self.video_pipeline else self.on_srt_audio_caller_removed,
-			on_srt_caller_added = self.on_srt_video_caller_added if pipeline is self.video_pipeline else self.on_srt_audio_caller_added,
+			#on_srt_caller_removed = self.on_srt_video_caller_removed if pipeline is self.video_pipeline else self.on_srt_audio_caller_removed,
+			#on_srt_caller_added = self.on_srt_video_caller_added if pipeline is self.video_pipeline else self.on_srt_audio_caller_added,
 		)
 
 	def output_settings(self, pipeline):

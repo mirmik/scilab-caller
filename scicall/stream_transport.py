@@ -9,7 +9,7 @@ from scicall.util import pipeline_chain
 
 class TransportBuilder:
     def __init__(self):
-        self.srt_latency = 60
+        self.srt_latency = 80
 
 class SourceTransportBuilder(TransportBuilder):
     """ Строитель приёмного каскада внешнего потока. 
@@ -180,7 +180,8 @@ class TranslationTransportBuilder(TransportBuilder):
         srtsink = Gst.ElementFactory.make("srtsink", None)
         srtsink.set_property('uri', f"srt://:{settings.port}")
         srtsink.set_property('wait-for-connection', False)
-        #srtsink.set_property('sync', False)
+        srtsink.set_property('async', True)
+        srtsink.set_property('sync', False)
         srtsink.set_property('latency', self.srt_latency)
         pipeline.add(srtsink)
         return srtsink, srtsink
@@ -190,14 +191,15 @@ class TranslationTransportBuilder(TransportBuilder):
         srtsink.set_property('uri', f"srt://{settings.ip}:{settings.port}")
         srtsink.set_property('wait-for-connection', False)
         srtsink.set_property('latency', self.srt_latency)
-        #srtsink.set_property('sync', False)
+        srtsink.set_property('async', True)
+        srtsink.set_property('sync', False)
         pipeline.add(srtsink)
         return srtsink, srtsink
 
     def rtpsrt(self, pipeline, settings):
         srtsink = Gst.ElementFactory.make("srtsink", None)
         srtsink.set_property('uri', f"srt://:{settings.port}")
-        srtsink.set_property('wait-for-connection', False)
+        srtsink.set_property('wait-for-connection', True)
         srtsink.set_property('latency', self.srt_latency)
         rtpcodecpay = Gst.ElementFactory.make(self.rtpcodecpay(settings.codec), None)
         return pipeline_chain(pipeline, rtpcodecpay, srtsink)
@@ -205,7 +207,7 @@ class TranslationTransportBuilder(TransportBuilder):
     def rtpsrt_remote(self, pipeline, settings):
         srtsink = Gst.ElementFactory.make("srtsink", None)
         srtsink.set_property('uri', f"srt://{settings.ip}:{settings.port}")
-        srtsink.set_property('wait-for-connection', False)
+        srtsink.set_property('wait-for-connection', True)
         srtsink.set_property('latency', self.srt_latency)
         rtpcodecpay = Gst.ElementFactory.make(self.rtpcodecpay(settings.codec), None)
         return pipeline_chain(pipeline, rtpcodecpay, srtsink)

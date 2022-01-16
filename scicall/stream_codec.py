@@ -110,12 +110,10 @@ class TranslationCodecBuilder(CodecBuilder):
 
     def h264(self, pipeline, settings):
         h264enc = Gst.ElementFactory.make("x264enc", None)
+        #h264parse = Gst.ElementFactory.make("h264parse", None)
         convert = Gst.ElementFactory.make("videoconvert", None)
         h264enc.set_property('tune', "zerolatency")
-        pipeline.add(h264enc)
-        pipeline.add(convert)
-        convert.link(h264enc)
-        return (convert, h264enc)
+        return pipeline_chain(pipeline, convert, h264enc)
 
     def h264_ts(self, pipeline, settings):
         h264enc = Gst.ElementFactory.make("x264enc", None)

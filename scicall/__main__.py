@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import gi
+import os
 gi.require_version('Gst', '1.0')
 gi.require_version('GstVideo', '1.0')
 from gi.repository import GObject, Gst, GstVideo
@@ -11,12 +12,14 @@ from scicall.stream_pipeline import StreamPipeline
 from scicall.control_panel import ControlPanel
 from scicall.guest_caller import GuestCaller
 from scicall.guest_controller import ConnectionController, ConnectionControllerZone
+from scicall.interaptor import Interaptor
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from enum import Enum
 import traceback
 import sys
+from scicall.finisher import setup_interrupt_handlers, invoke_destructors
 
 class GstreamerDisplay(QWidget):
     """ Виджет, в котором рисует выходной элемент видоконвеера """
@@ -170,6 +173,13 @@ class MainWindow(QMainWindow):
         self.setFixedSize(self.minimumSizeHint())
         self.adjustSize()
 
+    def closeEvent(self, event):
+        #invoke_destructors()
+        #os._exit(0)
+        pass
+
+def srt_disconnect():
+    print("SRT_DISCONNECT")
 
 def main():
     Gst.init(sys.argv)
@@ -177,10 +187,15 @@ def main():
     #Gst.debug_set_default_threshold(3)
     #GObject.threads_init()
 
+    #setup_interrupt_handlers()
+    #Interaptor.instance().start_listen()
+    #Interaptor.instance().srt_disconnect.connect(srt_disconnect)
+
     app = QApplication(sys.argv)
+    app.quitOnLastWindowClosed = False
     window = MainWindow()
     window.show()
-    sys.exit(app.exec_())
+    return sys.exit(app.exec())
 
 
 if __name__ == '__main__':

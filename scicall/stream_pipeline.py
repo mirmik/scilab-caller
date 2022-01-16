@@ -17,6 +17,7 @@ from scicall.stream_settings import (
 from scicall.stream_transport import SourceTransportBuilder, TranslationTransportBuilder
 from scicall.stream_codec import SourceCodecBuilder, TranslationCodecBuilder
 from scicall.util import pipeline_chain
+from scicall.interaptor import Interaptor
 
 
 class SourceBuilder:
@@ -119,7 +120,7 @@ class TranslationBuilder:
         codec_sink.link(trans_src)
         return codec_src, trans_sink
 
-class StreamPipeline:
+class StreamPipeline(QObject):
     """Класс отвечает за строительство работы каскада gstreamer и инкапсулирует
             логику работы с ним.
 
@@ -133,6 +134,7 @@ class StreamPipeline:
     """
 
     def __init__(self, display_widget):
+        super().__init__()
         self.display_widget = display_widget
         self.pipeline = None
         self.sink_width = 320
@@ -173,15 +175,46 @@ class StreamPipeline:
             self.pipeline.add(sink)
             return (sink, sink)
 
+    def new_sample(self, a, b):
+        self.last_sample = time.time()
+        return Gst.FlowReturn.OK
+
+    def sample_flow_control(self):
+        if self.flow_runned is False and time.time() - self.last_sample < 0.1:
+            self.flow_runned = True
+            return
+
+        if self.flow_runned is True and time.time() - self.last_sample > 0.1:
+            self.flow_runned = False
+            if self.last_input_settings.transport == TransportType.SRT:
+                self.srt_disconnect()
+            return
+
     def link_pipeline(self):
+        self.last_sample = time.time()
+        self.flow_runned = False
+        self.sample_controller = QTimer()
+        self.sample_controller.timeout.connect(self.sample_flow_control)
+        self.sample_controller.setInterval(100)
+        self.sample_controller.start()
         tee = Gst.ElementFactory.make("tee", None)
 
-        queue1 = Gst.ElementFactory.make("queue", "q1")
-        queue2 = Gst.ElementFactory.make("queue", "q2")
+        appsink = Gst.ElementFactory.make("appsink", None)
+        queue1 = Gst.ElementFactory.make("queue", None)
+        queue2 = Gst.ElementFactory.make("queue", None)
+        queue3 = Gst.ElementFactory.make("queue", None)
 
+        self.pipeline.add(appsink)
         self.pipeline.add(tee)
         self.pipeline.add(queue1)
         self.pipeline.add(queue2)
+        self.pipeline.add(queue3)
+
+        tee.link(queue3)
+        queue3.link(appsink)
+        appsink.set_property("sync", True)
+        appsink.set_property("emit-signals", True)
+        appsink.connect("new-sample", self.new_sample, None)
 
         self.source_sink.link(tee)
         tee.link(queue1)
@@ -229,6 +262,15 @@ class StreamPipeline:
         self.bus.connect('message::error', self.on_error_message)
         self.bus.connect("message::eos", self.eos_handle)
 
+        Interaptor.instance().srt_disconnect.connect(self.srt_disconnect)
+
+    def srt_disconnect(self):
+        if self.pipeline:
+            self.pipeline.set_state(Gst.State.PAUSED)
+            self.pipeline.set_state(Gst.State.READY)
+            self.pipeline.set_state(Gst.State.PAUSED)
+            self.pipeline.set_state(Gst.State.PLAYING)        
+
     def on_error_message(self, bus, msg):
         print("on_error_message", msg.parse_error())
 
@@ -243,6 +285,9 @@ class StreamPipeline:
             self.display_widget.connect_to_sink(msg.src)
 
     def stop(self):
+        if self.sample_controller:
+            self.sample_controller.stop()
+            self.sample_controller = None
         if self.pipeline:
             self.pipeline.set_state(Gst.State.PAUSED)
             self.pipeline.set_state(Gst.State.READY)

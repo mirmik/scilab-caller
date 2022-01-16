@@ -14,7 +14,7 @@ directory = os.path.dirname(os.path.realpath(__file__))
 setup(
     name="scicall",
     packages=["scicall"],
-    version="1.1.0",
+    version="0.1.0",
     license="MIT",
     description="TODO",
     author="netricks",

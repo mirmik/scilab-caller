@@ -190,7 +190,6 @@ def main():
     #setup_interrupt_handlers()
     #Interaptor.instance().start_listen()
     #Interaptor.instance().srt_disconnect.connect(srt_disconnect)
-
     app = QApplication(sys.argv)
     app.quitOnLastWindowClosed = False
     window = MainWindow()

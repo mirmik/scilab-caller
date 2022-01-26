@@ -56,7 +56,8 @@ class StreamSettings:
                  mediatype=None,
                  ndi_name=None,
                  on_srt_caller_removed=None,
-                 on_srt_caller_added=None
+                 on_srt_caller_added=None,
+                 udpspam = None
 ):
         self.mode = mode
         self.device = device
@@ -68,8 +69,11 @@ class StreamSettings:
         self.ndi_name = ndi_name
         self.on_srt_caller_added = on_srt_caller_added
         self.on_srt_caller_removed = on_srt_caller_removed
-
+        self.udpspam = udpspam
 
 class MiddleSettings:
-    def __init__(self, display_enabled):
+    def __init__(self, display_enabled, width=320, height=240, mediatype=None):
         self.display_enabled = display_enabled
+        self.width=320
+        self.height=240
+        self.mediatype = mediatype

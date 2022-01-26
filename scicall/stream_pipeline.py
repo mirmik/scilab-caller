@@ -11,7 +11,8 @@ from scicall.stream_settings import (
     VideoCodecType,
     AudioCodecType,
     TransportType,
-    MediaType
+    MediaType,
+    StreamSettings
 )
 
 from scicall.stream_transport import SourceTransportBuilder, TranslationTransportBuilder
@@ -33,12 +34,22 @@ class SourceBuilder:
         self.framerate = 30
 
     def make(self, pipeline, settings):
+        if isinstance(settings, list):
+            return self.make_muxer(pipeline, settings)
         builders = {
             SourceMode.TEST: self.test_source,
             SourceMode.CAPTURE: self.capture,
             SourceMode.STREAM: self.stream,
         }
         return builders[settings.mode](pipeline, settings)
+
+    def make_muxer(self, pipeline, settings):
+        mixer = Gst.ElementFactory.make("audiomixer", None)
+        pipeline.add(mixer)
+        for s in settings:
+            _, oend = SourceBuilder().make(pipeline, s) 
+            oend.link(mixer)
+        return None, mixer    
 
     def test_source(self, pipeline, settings):
         source = Gst.ElementFactory.make({
@@ -131,6 +142,8 @@ class StreamPipeline(QObject):
             source_end --> tee --> queue --> translation_end
                             |
                              ----> queue --> videoscale --> videoconvert --> display_widget 
+                            |
+                            --(not optimal?>)-> coder -> udpspam
     """
 
     def __init__(self, display_widget):
@@ -141,11 +154,11 @@ class StreamPipeline(QObject):
         if display_widget:
 	        display_widget.setFixedWidth(self.sink_width)
 
-    def make_video_feedback_capsfilter(self):
+    def make_video_feedback_capsfilter(self, settings):
         """Создаёт capsfilter, определяющий, форматирование ответвления конвеера, идущего
         к контрольному видео виджету."""
         caps = Gst.Caps.from_string(
-            f"video/x-raw,width={self.sink_width},height={240}")
+            f"video/x-raw,width={settings.width},height={settings.height}")
         capsfilter = Gst.ElementFactory.make('capsfilter', None)
         capsfilter.set_property("caps", caps)
         return capsfilter
@@ -156,7 +169,7 @@ class StreamPipeline(QObject):
             videoconvert = Gst.ElementFactory.make("videoconvert", None)
             sink = Gst.ElementFactory.make("autovideosink", None)
             sink.set_property("sync", False)
-            sink_capsfilter = self.make_video_feedback_capsfilter()
+            sink_capsfilter = self.make_video_feedback_capsfilter(settings)
             return pipeline_chain(self.pipeline, videoscale, videoconvert, sink_capsfilter, sink)
         else:
             sink = Gst.ElementFactory.make("fakesink", None)
@@ -169,7 +182,8 @@ class StreamPipeline(QObject):
             spectrascope = Gst.ElementFactory.make("spectrascope", None)
             vconvert = Gst.ElementFactory.make("videoconvert", None)
             sink = Gst.ElementFactory.make("autovideosink", None)
-            return pipeline_chain(self.pipeline, convert, spectrascope, vconvert, sink)
+            sink_capsfilter = self.make_video_feedback_capsfilter(settings)
+            return pipeline_chain(self.pipeline, convert, spectrascope, vconvert, sink_capsfilter, sink)
         else:
             sink = Gst.ElementFactory.make("fakesink", None)
             self.pipeline.add(sink)
@@ -193,7 +207,7 @@ class StreamPipeline(QObject):
                 self.srt_disconnect()
             return
 
-    def link_pipeline(self):
+    def link_pipeline(self, input_settings, translation_settings, middle_settings):
         self.last_sample = time.time()
         self.flow_runned = False
         self.sample_controller = QTimer()
@@ -234,26 +248,48 @@ class StreamPipeline(QObject):
             tee.link(queue2)
             queue2.link(self.output_src)
 
-    def make_pipeline(self, input_settings, translation_settings, middle_settings):
-        assert input_settings.mediatype == translation_settings.mediatype
+        if translation_settings.udpspam:
+            queue4 = Gst.ElementFactory.make("queue", None)
+            queue4.set_property("max-size-bytes", 100000) 
+            queue4.set_property("max-size-buffers", 0) 
+            print("UDPSPAM ENABLED", translation_settings.udpspam, input_settings.codec)
+            if translation_settings.mediatype is not MediaType.AUDIO:
+                raise Exception("UDPSPAM is not supported for videosignal") 
+            udpspam_settings = StreamSettings(
+                mediatype= translation_settings.mediatype,
+                mode = TranslateMode.STREAM,
+                codec=input_settings.codec,
+                transport=TransportType.UDP,
+                port=translation_settings.udpspam,
+                ip="127.0.0.1"
+            )
+            spamsrc, spamsink = TranslationBuilder().make(self.pipeline, udpspam_settings)
+            self.pipeline.add(queue4)
+            tee.link(queue4)
+            queue4.link(spamsrc)
 
+    def make_pipeline(self, input_settings, translation_settings, middle_settings):
+        print("make_pipeline")
         self.last_input_settings = input_settings
         self.last_translation_settings = translation_settings
         self.last_middle_settings = middle_settings
 
         self.pipeline = Gst.Pipeline()
+        print("do pipeline elements")
         srcsrc, srcsink = SourceBuilder().make(self.pipeline, input_settings)
         outsrc, outsink = TranslationBuilder().make(self.pipeline, translation_settings)
+        
+        mediatype = middle_settings.mediatype if middle_settings.mediatype is not None else translation_settings.mediatype
         middle_src, middle_sink = {
             MediaType.VIDEO: self.make_video_middle_end,
             MediaType.AUDIO: self.make_audio_middle_end
-        }[input_settings.mediatype](middle_settings)
+        }[mediatype](middle_settings)
 
         self.source_sink = srcsink
         self.output_src = outsrc
         self.middle_src = middle_src
 
-        self.link_pipeline()
+        self.link_pipeline(input_settings, translation_settings, middle_settings)
         return self.pipeline
 
     def runned(self):

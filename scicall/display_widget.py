@@ -13,6 +13,7 @@ class GstreamerDisplay(QWidget):
 		palette.setColor(QPalette.Window, Qt.black)
 		self.setAutoFillBackground(True)
 		self.setPalette(palette)
+		self.setFixedSize(320,240)
 
 	def connect_to_sink(self, source):
 		source.set_window_handle(self.winid)

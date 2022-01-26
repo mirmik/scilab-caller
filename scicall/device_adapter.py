@@ -42,6 +42,8 @@ class DeviceAdapter:
         return "30/1" in afrate
 
     def filtered_video_caps(self):
+        if self.gstdevice is None:
+            return []
         caps = self.gstdevice.get_caps()
         strcaps = caps.to_string()
         splitted = strcaps.split(";")
@@ -50,6 +52,8 @@ class DeviceAdapter:
         return frated
 
     def audio_caps(self):
+        if self.gstdevice is None:
+            return []
         caps = self.gstdevice.get_caps().to_string()
         return caps
 
@@ -130,6 +134,27 @@ class GstAlsaDeviceAdapter(DeviceAdapter):
         # TODO : MIC choise
         return el
 
+class TestVideoSrcDeviceAdapter(DeviceAdapter):
+    def __init__(self):
+        super().__init__(None)
+
+    def user_readable_name(self):
+        return "Тестовый источник"
+
+    def make_gst_element(self):
+        el = Gst.ElementFactory.make("videotestsrc", None)
+        return el
+
+class TestAudioSrcDeviceAdapter(DeviceAdapter):
+    def __init__(self):
+        super().__init__(None)
+
+    def user_readable_name(self):
+        return "Тестовый источник"
+
+    def make_gst_element(self):
+        el = Gst.ElementFactory.make("audiotestsrc", None)
+        return el
 
 class DeviceAdapterFabric:
     def make_adapter(self, gstdevice):
@@ -147,3 +172,4 @@ class DeviceAdapterFabric:
 
         print("undefined device type:", typename)
         return DeviceAdapter(gstdevice)
+

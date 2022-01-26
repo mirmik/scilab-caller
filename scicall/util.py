@@ -87,6 +87,9 @@ def channel_feedback_video_port(ch):
 def channel_feedback_audio_port(ch):
     return PORT_BASE + ch * PORTS_BY_CHANNEL + 4
 
+def channel_mpeg_stream_port(ch):
+    return PORT_BASE + ch * PORTS_BY_CHANNEL + 6
+
 def channel_control_port(ch):
     return PORT_BASE + ch * PORTS_BY_CHANNEL + 0
 

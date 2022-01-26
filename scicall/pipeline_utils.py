@@ -111,3 +111,15 @@ def autovideosink(pipeline, src):
     pipeline.add(vconvert)
     src.link(vconvert)
     vconvert.link(sink)
+
+def imagesource(pipeline, file=None):
+    q = buffer_queue()
+    filesrc = Gst.ElementFactory.make("filesrc", None)
+    parse = Gst.ElementFactory.make("pngparse", None)
+    decode = Gst.ElementFactory.make("pngdec", None)
+    convert = Gst.ElementFactory.make("videoconvert", None)
+    freeze = Gst.ElementFactory.make("imagefreeze", None)
+    pipeline_chain(pipeline, filesrc, parse, decode, q, convert, freeze)
+    freeze.set_property("is-live", True)
+    filesrc.set_property("location", "c:/users/sorok/test.png")
+    return freeze

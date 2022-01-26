@@ -280,32 +280,35 @@ class GuestCaller(QWidget):
         pipeline = Gst.Pipeline()
         self.common_pipeline = pipeline
 
-        _, videosrc = SourceBuilder().make(pipeline, self.input_settings(MediaType.VIDEO))
-        _, audiosrc = SourceBuilder().make(pipeline, self.input_settings(MediaType.AUDIO))
+        #_, videosrc = SourceBuilder().make(pipeline, self.input_settings(MediaType.VIDEO))
+        #_, audiosrc = SourceBuilder().make(pipeline, self.input_settings(MediaType.AUDIO))
 
-        videosrc_tee = pipeline_utils.make_tee_from_video(pipeline, videosrc)
-        audiosrc_tee = pipeline_utils.make_tee_from_audio(pipeline, audiosrc)
+        img = pipeline_utils.imagesource(pipeline)
 
-        pipeline_utils.display_video_from_tee(pipeline, videosrc_tee)
-        pipeline_utils.display_specter_from_tee(pipeline, audiosrc_tee)
+        #videosrc_tee = pipeline_utils.make_tee_from_video(pipeline, img)
+        #audiosrc_tee = pipeline_utils.make_tee_from_audio(pipeline, audiosrc)
 
-        h264 = pipeline_utils.h264_encode_from_tee(pipeline, videosrc_tee)
-        opus = pipeline_utils.opus_encode_from_tee(pipeline, audiosrc_tee)
-        mpeg = pipeline_utils.mpeg_combine(pipeline, [h264, opus])
+        #pipeline_utils.display_video_from_tee(pipeline, videosrc_tee)
+        #pipeline_utils.display_specter_from_tee(pipeline, audiosrc_tee)
 
-        srtsink = pipeline_utils.output_sender_srtstream(
-            pipeline, 
-            mpeg, 
-            host=self.station_ip.text(),
-            port=channel_mpeg_stream_port(self.channelno()))
+        #h264 = pipeline_utils.h264_encode_from_tee(pipeline, videosrc_tee)
+        #opus = pipeline_utils.opus_encode_from_tee(pipeline, audiosrc_tee)
+        #mpeg = pipeline_utils.mpeg_combine(pipeline, [h264, opus])
+
+        #srtsink = pipeline_utils.output_sender_srtstream(
+        #    pipeline, 
+        #    mpeg, 
+        #    host=self.station_ip.text(),
+        #    port=channel_mpeg_stream_port(self.channelno()))
 
         #pipeline_utils.output_udpstream(
         #    pipeline, 
         #    mpeg, 
         #    host=self.station_ip.text(),
         #    port=channel_mpeg_stream_port(self.channelno()))
-        #pipeline_utils.fakestub(pipeline, h264)
-        #pipeline_utils.fakestub(pipeline, opus)
+        
+        pipeline_utils.autovideosink(pipeline, img)
+        #pipeline_utils.fakestub(pipeline, img)
         
     def start_common_stream(self):
         self.common_pipeline.set_state(Gst.State.PLAYING)

@@ -63,7 +63,7 @@ class GuestCaller(QWidget):
         self.feed_audio_enable_button = QPushButton("Аудио(обратный)")
 
         self.connect_button = QPushButton("ТестовоеДействие")
-        self.status_label = QTextEdit("Hello")
+        self.test_button = QPushButton("ТестовоеДействие2")
 
         self.main_layout = QHBoxLayout()
         self.left_layout = QVBoxLayout()
@@ -82,7 +82,6 @@ class GuestCaller(QWidget):
         self.control_layout.addWidget(self.channel_list, 1, 1)
         self.control_layout.addWidget(self.video_source, 2, 1)
         self.control_layout.addWidget(self.audio_source, 3, 1)
-        self.control_layout.addWidget(self.status_label, 4, 1)
 
         self.avpanel_layout.addWidget(self.video_enable_button)
         self.avpanel_layout.addWidget(self.audio_enable_button)
@@ -99,7 +98,8 @@ class GuestCaller(QWidget):
         self.main_layout.addLayout(self.left_feed_layout)
         self.main_layout.addLayout(self.control_layout)
         self.main_layout.addWidget(self.connect_button)
-        
+        self.main_layout.addWidget(self.test_button)
+
         self.audio_pipeline = StreamPipeline(self.spectroscope_widget)
         self.video_pipeline = StreamPipeline(self.display_widget)
         self.feedback_audio_pipeline = StreamPipeline(self.feedback_spectroscope_widget)
@@ -133,26 +133,10 @@ class GuestCaller(QWidget):
         print("on_disconnect")
 
     def video_clicked(self):
-        if self.video_pipeline.runned():
-            self.stop_pipeline(self.video_pipeline)
-        else:
-            self.start_pipeline(self.video_pipeline)
-
-    def video_status(self):
-        if not self.video_pipeline.runned():
-            return "отключён"
-        return f"активен: порт{channel_video_port(self.channelno())}"
-
-    def audio_status(self):
-        if not self.audio_pipeline.runned():
-            return "отключён"
-        return f"активен: порт{channel_audio_port(self.channelno())}"
+        self.enable_disable_video_input()
 
     def audio_clicked(self):
-        if self.audio_pipeline.runned():
-            self.stop_pipeline(self.audio_pipeline)
-        else:
-            self.start_pipeline(self.audio_pipeline)
+        self.enable_disable_audio_input()
 
     def feed_video_clicked(self):
         if self.feedback_video_pipeline.runned():
@@ -280,24 +264,22 @@ class GuestCaller(QWidget):
         pipeline = Gst.Pipeline()
         self.common_pipeline = pipeline
 
-        #_, self.videosrc = SourceBuilder().make(pipeline, self.input_settings(MediaType.VIDEO))
-        #_, audiosrc = SourceBuilder().make(pipeline, self.input_settings(MediaType.AUDIO))
-    
-        #camerabin = Gst.ElementFactory.make("camerabin", None)
-        #camerabin.emit_signal("start-capture")
-        #pipeline.add(camerabin)
+        self.fakevideosrc = pipeline_utils.imagesource("c:/users/asus/test.png")
+        self.fakeaudiosrc = pipeline_utils.quiteaudio()
+        self.videosrc = pipeline_utils.capture_video(self.input_device(MediaType.VIDEO))
+        self.audiosrc = pipeline_utils.capture_audio(self.input_device(MediaType.AUDIO))
+        
+        self.fakevideosrc.add_to_pipeline(pipeline)
+        self.fakeaudiosrc.add_to_pipeline(pipeline)
+        self.videosrc_tee = pipeline_utils.tee_from(pipeline, self.fakevideosrc)
+        self.audiosrc_tee = pipeline_utils.tee_from(pipeline, self.fakeaudiosrc)
 
-        self.img1 = pipeline_utils.imagesource("c:/users/sorok/test.png")
-        self.img2 = pipeline_utils.imagesource("c:/users/sorok/test2.png")
-        #videosrc_tee = pipeline_utils.make_tee_from_video(pipeline, img)
-        #audiosrc_tee = pipeline_utils.make_tee_from_audio(pipeline, audiosrc)
+        self.disp_video = pipeline_utils.display_video_from_tee(pipeline, self.videosrc_tee)
+        self.disp_audio = pipeline_utils.display_specter_from_tee(pipeline, self.audiosrc_tee)
 
-        #pipeline_utils.display_video_from_tee(pipeline, videosrc_tee)
-        #pipeline_utils.display_specter_from_tee(pipeline, audiosrc_tee)
-
-        #h264 = pipeline_utils.h264_encode_from_tee(pipeline, videosrc_tee)
-        #opus = pipeline_utils.opus_encode_from_tee(pipeline, audiosrc_tee)
-        #mpeg = pipeline_utils.mpeg_combine(pipeline, [h264, opus])
+        h264 = pipeline_utils.h264_encode_from_tee(pipeline, self.videosrc_tee)
+        opus = pipeline_utils.opus_encode_from_tee(pipeline, self.audiosrc_tee)
+        mpeg = pipeline_utils.mpeg_combine_from(pipeline, [h264, opus])
 
         #srtsink = pipeline_utils.output_sender_srtstream(
         #    pipeline, 
@@ -311,36 +293,24 @@ class GuestCaller(QWidget):
         #    host=self.station_ip.text(),
         #    port=channel_mpeg_stream_port(self.channelno()))
         
-        self.sink = pipeline_utils.autovideosink()
-        #pipeline_utils.fakestub(pipeline, img)
-
-        #self.videosrc = videosrc
+        self.sink = pipeline_utils.fakestub_from(pipeline, mpeg)
+        
+    def on_sync_message(self, bus, msg):
+        """Биндим контрольное изображение к переданному снаружи виджету."""
+        if msg.get_structure().get_name() == 'prepare-window-handle':
+            if msg.src.get_name()[-1]=='1':
+                self.display_widget.connect_to_sink(msg.src)
+            if msg.src.get_name()[-1]=='0':
+                self.spectroscope_widget.connect_to_sink(msg.src)
         
     def start_common_stream(self):
-        self.sink.add_to_pipeline(self.common_pipeline)
-        self.img1.add_to_pipeline(self.common_pipeline)
-        self.img1.link(self.sink)
-
+        self.bus = self.common_pipeline.get_bus()
+        self.bus.add_signal_watch()
+        self.bus.enable_sync_message_emission()
+        self.bus.connect('sync-message::element', self.on_sync_message)
+        
         self.common_pipeline.set_state(Gst.State.PLAYING)
         
-        #self.common_pipeline.set_state(Gst.State.NULL)
-        
-        self.img1.set_state(Gst.State.NULL)
-        self.img1.unlink(self.sink)
-        self.img1.remove_from_pipeline(self.common_pipeline)
-        self.img2.add_to_pipeline(self.common_pipeline)
-        self.img2.link(self.sink)
-        self.img2.set_state(Gst.State.PLAYING)
-        
-
-        #self.common_pipeline.set_state(Gst.State.PLAYING)
-        
-        #self.sink.reverse_unlink(self.videosrc)
-        #self.common_pipeline.remove(self.videosrc)
-        #self.img.add_to_pipeline(self.common_pipeline)
-        #self.img.link(self.sink)
-        #self.common_pipeline.set_state(Gst.State.PLAYING)
-
         #self.videosrc.set_state(Gst.State.NULL)
 
     def stop_common_stream(self):
@@ -350,3 +320,40 @@ class GuestCaller(QWidget):
     def test_action(self):
         self.setup_common_stream()
         self.start_common_stream()
+
+    def enable_disable_video_input(self):
+        self.videosrc_tee.set_state(Gst.State.PAUSED)
+        if self.fakevideosrc.is_enabled():
+            self.fakevideosrc.set_state(Gst.State.NULL)
+            self.fakevideosrc.unlink(self.videosrc_tee)
+            self.fakevideosrc.remove_from_pipeline(self.common_pipeline)
+            self.videosrc.add_to_pipeline(self.common_pipeline)
+            self.videosrc.link(self.videosrc_tee)
+            self.videosrc.set_state(Gst.State.PLAYING)
+        else:
+            self.videosrc.set_state(Gst.State.NULL)
+            self.videosrc.unlink(self.videosrc_tee)
+            self.videosrc.remove_from_pipeline(self.common_pipeline)
+            self.fakevideosrc.add_to_pipeline(self.common_pipeline)
+            self.fakevideosrc.link(self.videosrc_tee)
+            self.fakevideosrc.set_state(Gst.State.PLAYING)
+        self.videosrc_tee.set_state(Gst.State.PLAYING)
+        
+    def enable_disable_audio_input(self):
+        self.audiosrc_tee.set_state(Gst.State.PAUSED)
+        if self.fakeaudiosrc.is_enabled():
+            self.fakeaudiosrc.set_state(Gst.State.NULL)
+            self.fakeaudiosrc.unlink(self.audiosrc_tee)
+            self.fakeaudiosrc.remove_from_pipeline(self.common_pipeline)
+            self.audiosrc.add_to_pipeline(self.common_pipeline)
+            self.audiosrc.link(self.audiosrc_tee)
+            self.audiosrc.set_state(Gst.State.PLAYING)
+        else:
+            self.audiosrc.set_state(Gst.State.NULL)
+            self.audiosrc.unlink(self.audiosrc_tee)
+            self.audiosrc.remove_from_pipeline(self.common_pipeline)
+            self.fakeaudiosrc.add_to_pipeline(self.common_pipeline)
+            self.fakeaudiosrc.link(self.audiosrc_tee)
+            self.fakeaudiosrc.set_state(Gst.State.PLAYING)
+        self.audiosrc_tee.set_state(Gst.State.PLAYING)
+        

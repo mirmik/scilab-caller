@@ -280,11 +280,15 @@ class GuestCaller(QWidget):
         pipeline = Gst.Pipeline()
         self.common_pipeline = pipeline
 
-        #_, videosrc = SourceBuilder().make(pipeline, self.input_settings(MediaType.VIDEO))
+        #_, self.videosrc = SourceBuilder().make(pipeline, self.input_settings(MediaType.VIDEO))
         #_, audiosrc = SourceBuilder().make(pipeline, self.input_settings(MediaType.AUDIO))
+    
+        #camerabin = Gst.ElementFactory.make("camerabin", None)
+        #camerabin.emit_signal("start-capture")
+        #pipeline.add(camerabin)
 
-        img = pipeline_utils.imagesource(pipeline)
-
+        self.img1 = pipeline_utils.imagesource("c:/users/sorok/test.png")
+        self.img2 = pipeline_utils.imagesource("c:/users/sorok/test2.png")
         #videosrc_tee = pipeline_utils.make_tee_from_video(pipeline, img)
         #audiosrc_tee = pipeline_utils.make_tee_from_audio(pipeline, audiosrc)
 
@@ -307,14 +311,40 @@ class GuestCaller(QWidget):
         #    host=self.station_ip.text(),
         #    port=channel_mpeg_stream_port(self.channelno()))
         
-        pipeline_utils.autovideosink(pipeline, img)
+        self.sink = pipeline_utils.autovideosink()
         #pipeline_utils.fakestub(pipeline, img)
+
+        #self.videosrc = videosrc
         
     def start_common_stream(self):
+        self.sink.add_to_pipeline(self.common_pipeline)
+        self.img1.add_to_pipeline(self.common_pipeline)
+        self.img1.link(self.sink)
+
         self.common_pipeline.set_state(Gst.State.PLAYING)
+        
+        #self.common_pipeline.set_state(Gst.State.NULL)
+        
+        self.img1.set_state(Gst.State.NULL)
+        self.img1.unlink(self.sink)
+        self.img1.remove_from_pipeline(self.common_pipeline)
+        self.img2.add_to_pipeline(self.common_pipeline)
+        self.img2.link(self.sink)
+        self.img2.set_state(Gst.State.PLAYING)
+        
+
+        #self.common_pipeline.set_state(Gst.State.PLAYING)
+        
+        #self.sink.reverse_unlink(self.videosrc)
+        #self.common_pipeline.remove(self.videosrc)
+        #self.img.add_to_pipeline(self.common_pipeline)
+        #self.img.link(self.sink)
+        #self.common_pipeline.set_state(Gst.State.PLAYING)
+
+        #self.videosrc.set_state(Gst.State.NULL)
 
     def stop_common_stream(self):
-        self.common_pipeline.set_state(GST.State.PAUSED)
+        self.common_pipeline.set_state(Gst.State.PAUSED)
         self.common_pipeline = None
 
     def test_action(self):

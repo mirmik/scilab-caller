@@ -97,6 +97,9 @@ def internal_channel_udpspam_port(ch):
     return PORT_BASE + ch * PORTS_BY_CHANNEL + 5
 
 def pipeline_chain(pipeline, *args):
+    if pipeline is None:
+        return
+
     for el in args:
         pipeline.add(el)
 
@@ -104,3 +107,18 @@ def pipeline_chain(pipeline, *args):
         args[i].link(args[i+1])
 
     return args[0], args[-1]
+
+#def pipeline_chain_bin(pipeline, *args):
+#    bin = Gst.Bin(None)
+#    for el in args:
+        #pipeline.add(el)
+#        bin.add(el)
+#    pipeline.add(bin)
+
+#    for i in range(len(args) - 1):
+#        args[i].link(args[i+1])
+#    pad = args[-1].get_static_pad("sink")
+#    print(pad)
+#    ghost_pad = Gst.GhostPad.new("sink", pad)
+#    bin.add_pad(ghost_pad)
+#    return bin

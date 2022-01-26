@@ -1,6 +1,52 @@
 from gi.repository import GObject, Gst, GstVideo
 from scicall.util import pipeline_chain
 
+class GstSubchain:
+    def __init__(self, arr):
+        self.arr = arr
+
+    def internal_link(self):
+        for i in range(len(self.arr)-1):
+            self.arr[i].link(self.arr[i+1])
+
+    def internal_unlink(self):
+        for i in range(len(self.arr)-1):
+            self.arr[i].unlink(self.arr[i+1])
+
+    def link(self, oth):
+        if isinstance(oth, GstSubchain):
+            self.arr[-1].link(oth.arr[0])
+            return    
+        else:
+            self.arr[-1].link(oth)
+
+    def unlink(self, oth):
+        if isinstance(oth, GstSubchain):
+            self.arr[-1].unlink(oth.arr[0])
+            return    
+        else:
+            self.arr[-1].unlink(oth)
+
+    def set_state(self, state):
+        for i in range(len(self.arr)):
+            self.arr[i].set_state(state)
+
+    def reverse_link(self, f):
+        f.link(self.arr[0])
+
+    def reverse_unlink(self, f):
+        f.unlink(self.arr[0])
+
+    def remove_from_pipeline(self, pipeline):
+        self.internal_unlink()
+        for a in self.arr:
+            pipeline.remove(a)
+
+    def add_to_pipeline(self, pipeline):
+        for a in self.arr:
+            pipeline.add(a)
+        self.internal_link()
+
 def make_tee_from_video(pipeline, videosrc):
     q=buffer_queue()
     tee = Gst.ElementFactory.make("tee", None)
@@ -104,22 +150,19 @@ def fakestub(pipeline, src):
     src.link(sink)
     sink.set_property("sync", False)
 
-def autovideosink(pipeline, src):
+def autovideosink():
     vconvert = Gst.ElementFactory.make("videoconvert", None)
     sink = Gst.ElementFactory.make("autovideosink", None)
-    pipeline.add(sink)
-    pipeline.add(vconvert)
-    src.link(vconvert)
-    vconvert.link(sink)
+    return GstSubchain([vconvert, sink])
 
-def imagesource(pipeline, file=None):
+def imagesource(file):
     q = buffer_queue()
     filesrc = Gst.ElementFactory.make("filesrc", None)
     parse = Gst.ElementFactory.make("pngparse", None)
     decode = Gst.ElementFactory.make("pngdec", None)
     convert = Gst.ElementFactory.make("videoconvert", None)
     freeze = Gst.ElementFactory.make("imagefreeze", None)
-    pipeline_chain(pipeline, filesrc, parse, decode, q, convert, freeze)
     freeze.set_property("is-live", True)
-    filesrc.set_property("location", "c:/users/sorok/test.png")
-    return freeze
+    filesrc.set_property("location", file)
+    subchain = GstSubchain([filesrc, parse, decode, q, convert, freeze])
+    return subchain

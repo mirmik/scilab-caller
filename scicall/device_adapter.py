@@ -72,6 +72,13 @@ class DefaultVideoDeviceAdapter(DeviceAdapter):
         else:
             raise Exception("Unsuported platform")
 
+    def to_pipeline_string(self):
+        if sys.platform == "linux":
+            return "v4l2src"
+        elif sys.platform == "win32":
+            return "ksvideosrc"
+        else:
+            raise Exception("Unsuported platform")
 
 class DefaultAudioDeviceAdapter(DeviceAdapter):
     def __init__(self):
@@ -88,6 +95,14 @@ class DefaultAudioDeviceAdapter(DeviceAdapter):
         else:
             raise Exception("Unsuported platform")
 
+    def to_pipeline_string(self):
+        if sys.platform == "linux":
+            return "alsasrc"
+        elif sys.platform == "win32":
+            return "wasapisrc"
+        else:
+            raise Exception("Unsuported platform")
+
 
 class GstKsDeviceAdapter(DeviceAdapter):
     #def user_readable_name(self):
@@ -100,6 +115,10 @@ class GstKsDeviceAdapter(DeviceAdapter):
         el.set_property("device-index", int(subs))
         return el
 
+    def to_pipeline_string(self):
+        ksname = self.gstdevice.get_name()
+        subs = ksname[8:len(ksname)]
+        return f"ksvideosrc device-index={int(subs)}"
 
 class GstDirectSoundSrcDeviceAdapter(DeviceAdapter):
     def is_supported(self):
@@ -111,6 +130,9 @@ class GstDirectSoundSrcDeviceAdapter(DeviceAdapter):
             "device", self.gstdevice.get_properties().get_string("device.strid"))
         return el
 
+    def to_pipeline_string(self):
+        strid = self.gstdevice.get_properties().get_string("device.strid")
+        return f"directsoundsrc device={strid}"
 
 class GstWasapiDeviceAdapter(DeviceAdapter):
     def make_gst_element(self):
@@ -119,6 +141,9 @@ class GstWasapiDeviceAdapter(DeviceAdapter):
             "device", self.gstdevice.get_properties().get_string("device.strid"))
         return el
 
+    def to_pipeline_string(self):
+        strid = self.gstdevice.get_properties().get_string("device.strid")
+        return f"wasapisrc device={strid}"
 
 class GstV4l2DeviceAdapter(DeviceAdapter):
     def make_gst_element(self):
@@ -127,12 +152,18 @@ class GstV4l2DeviceAdapter(DeviceAdapter):
             "device", self.gstdevice.get_properties().get_string("device.path"))
         return el
 
+    def to_pipeline_string(self):
+        path = self.gstdevice.get_properties().get_string("device.path")
+        return f"v4l2src device={path}"
 
 class GstAlsaDeviceAdapter(DeviceAdapter):
     def make_gst_element(self):
         el = Gst.ElementFactory.make("alsasrc", None)
         # TODO : MIC choise
         return el
+
+    def to_pipeline_string(self):
+        return "alsasrc"
 
 class TestVideoSrcDeviceAdapter(DeviceAdapter):
     def __init__(self):
@@ -145,6 +176,9 @@ class TestVideoSrcDeviceAdapter(DeviceAdapter):
         el = Gst.ElementFactory.make("videotestsrc", None)
         return el
 
+    def to_pipeline_string(self):
+        return "videotestsrc"
+
 class TestAudioSrcDeviceAdapter(DeviceAdapter):
     def __init__(self):
         super().__init__(None)
@@ -155,6 +189,9 @@ class TestAudioSrcDeviceAdapter(DeviceAdapter):
     def make_gst_element(self):
         el = Gst.ElementFactory.make("audiotestsrc", None)
         return el
+
+    def to_pipeline_string(self):
+        return "audiotestsrc"
 
 class DeviceAdapterFabric:
     def make_adapter(self, gstdevice):

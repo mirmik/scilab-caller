@@ -183,9 +183,9 @@ def srt_disconnect():
 
 def main():
     Gst.init(sys.argv)
-    #Gst.debug_set_active(True)
-    #Gst.debug_set_default_threshold(3)
-    #GObject.threads_init()
+    Gst.debug_set_active(True)
+    Gst.debug_set_default_threshold(3)
+    GObject.threads_init()
 
     #setup_interrupt_handlers()
     #Interaptor.instance().start_listen()

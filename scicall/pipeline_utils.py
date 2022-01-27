@@ -109,6 +109,22 @@ def h264_encode_from_tee(pipeline, tee):
     tee.link(q)
     return h264
 
+def h264dec_from(pipeline, src):
+    q = buffer_queue()
+    parser = Gst.ElementFactory.make("h264parse", None)
+    decoder = Gst.ElementFactory.make("avdec_h264", None)
+    pipeline_chain(pipeline, q, parser, decoder)
+    src.link(q)
+    return GstSubchain(q, parser, decoder)
+
+def opusdec_from(pipeline, src):
+    q = buffer_queue()
+    parser = Gst.ElementFactory.make("opusparse", None)
+    decoder = Gst.ElementFactory.make("opusdec", None)
+    pipeline_chain(pipeline, q, parser, decoder)
+    src.link(q)
+    return GstSubchain(q, parser, decoder)
+
 def opus_encode_from_tee(pipeline, tee):
     q = buffer_queue()
     vconvert = Gst.ElementFactory.make("audioconvert", None)
@@ -124,16 +140,46 @@ def mpeg_combine_from(pipeline, inputs):
         i.link(mpeg)
     return mpeg
 
+def mpeg_demux_from(pipeline, src):
+    #q = buffer_queue()    
+    parse = Gst.ElementFactory.make("tsparse", None)
+    demux = Gst.ElementFactory.make("tsdemux", None)
+    caps = Gst.Caps.from_string(f"video/mpegts,systemstream=true")
+    capsfilter = Gst.ElementFactory.make('capsfilter', None)
+    capsfilter.set_property("caps", caps)
+    pipeline_chain(pipeline, parse, capsfilter, demux)
+    src.link(parse)
+    return GstSubchain(parse, capsfilter, demux)
+
 def output_sender_srtstream(pipeline, src, host, port, latency=80):
     srtsink = Gst.ElementFactory.make("srtsink", None)
     srtsink.set_property('uri', f"srt://{host}:{port}")
-    srtsink.set_property('wait-for-connection', False)
+    srtsink.set_property('wait-for-connection', True)
     srtsink.set_property('latency', latency)
     srtsink.set_property('async', True)
     srtsink.set_property('sync', False)
     pipeline.add(srtsink)
     src.link(srtsink)
-    return srtsink
+    return GstSubchain(srtsink)
+
+def on_srt_caller_removed(self, a, b):
+    print("On srt caller removed", a, b)
+
+def on_srt_caller_added(self, a, b):
+    print("On srt caller added", a, b)
+
+def input_listener_srtstream(pipeline, port, latency=80):
+    srtsrc = Gst.ElementFactory.make("srtsrc", None)
+    srtsrc.set_property('uri', f"srt://0.0.0.0:{port}?mode=listener")
+    srtsrc.set_property('wait-for-connection', True)
+    srtsrc.set_property('latency', latency)
+
+    srtsrc.connect("caller-removed", on_srt_caller_removed)    
+    srtsrc.connect("caller-added", on_srt_caller_added)
+
+    pipeline_chain(pipeline, srtsrc)
+    return GstSubchain(srtsrc)
+
 
 def output_udpstream(pipeline, src, host, port):
     srtsink = Gst.ElementFactory.make("udpsink", None)
@@ -141,13 +187,14 @@ def output_udpstream(pipeline, src, host, port):
     srtsink.set_property('port', port)
     pipeline.add(srtsink)
     src.link(srtsink)
-    return srtsink
+    return GstSubchain(srtsink)
 
 def fakestub_from(pipeline, src):
     sink = Gst.ElementFactory.make("fakesink", None)
     pipeline.add(sink)
     src.link(sink)
     sink.set_property("sync", False)
+    return sink
 
 def autovideosink():
     vconvert = Gst.ElementFactory.make("videoconvert", None)
@@ -164,6 +211,13 @@ def imagesource(file):
     freeze.set_property("is-live", True)
     filesrc.set_property("location", file)
     subchain = GstSubchain(filesrc, parse, decode, q, convert, freeze)
+    return subchain
+
+def videotestsrc():
+    q = buffer_queue()
+    src = Gst.ElementFactory.make("videotestsrc", None)
+    src.set_property("is-live", True)
+    subchain = GstSubchain(src, q)
     return subchain
 
 def capture_video(device):

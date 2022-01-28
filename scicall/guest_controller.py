@@ -18,7 +18,8 @@ from scicall.util import (
     channel_feedback_video_port,
     channel_feedback_audio_port,
     internal_channel_udpspam_port,
-    channel_mpeg_stream_port)
+    channel_mpeg_stream_port,
+    channel_feedback_mpeg_stream_port)
 
 from scicall.stream_settings import (
     StreamSettings,
@@ -82,10 +83,6 @@ class ConnectionController(QWidget):
         self.setLayout(self.layout)
         self.update_info()
 
-        self.update_timer = QTimer(self)
-        self.update_timer.timeout.connect(self.update_if_need)
-        self.update_timer.start(100);
-
     def make_checkboxes_for_sound_feedback(self):
         for i in range(3):
             wdg = QCheckBox("Ретранс. звука: " + str(i))
@@ -93,57 +90,15 @@ class ConnectionController(QWidget):
             self.control_layout.addWidget(wdg)
             self.audio_feedback_checkboxes.append(wdg)
 
-    def audio_feedbacks(self):
-        idx=0
-        indexes=[]
-        for chb in self.audio_feedback_checkboxes:
-            if chb.isChecked():
-                indexes.append(idx)
-            idx+=1
-        return indexes
-
-    def update_if_need(self):
-        if self.need_update:
-            self.update_info()
-
     def update_info(self):
         self.need_update = False
-        self.infowdg.setText(f"""Контрольный порт: {self.control_port()}
-
-Видео:
-  порт: {self.video_port()}
-  NDI-поток: {self.ndi_video_name()}
-  состояние: (резерв){self.video_connected}
-
-Аудио:
-  порт: {self.audio_port()}
-  NDI-поток: {self.ndi_audio_name()}
-  состояние: (резерв){self.audio_connected}
-  обратная петля: {self.pipeline_udpspam(MediaType.AUDIO)}
-""")
+        self.infowdg.setText(f"""Контрольный порт: {self.control_port()}""")
 
     def control_port(self):
         return channel_control_port(self.channelno)
 
-    def video_port(self):
-        return channel_video_port(self.channelno)
-
-    def audio_port(self):
-        return channel_audio_port(self.channelno)
-
-    def feedback_video_port(self):
-        return channel_feedback_video_port(self.channelno)
-
-    def feedback_audio_port(self):
-        return channel_feedback_audio_port(self.channelno)
-
-    def send_greetings(self):
-        self.listener.send(json.dumps(
-            {"cmd" : "hello"}
-        ))
-
     def on_server_new_connect(self):
-        print("Station: on_server_connect")
+        print("STATION: on_server_connect")
         client = self.server.nextPendingConnection()
 
         if len(self.clients) == 0:
@@ -157,15 +112,13 @@ class ConnectionController(QWidget):
     def start_control_server(self):
         port = channel_control_port(self.channelno)
         self.server.listen(QHostAddress("0.0.0.0"), port)
-        print("StartControlServer", port)
-
+        
     def client_disconnected(self):
         print("STATION : guest_disconnected")
         self.clients.clear()
-        self.stop_common_stream()
+        self.stop_streams()
 
     def client_ready_read(self):
-        print("client_ready_read")
         client = self.clients[0]
         rawdata = client.readLineData(1024).decode("utf-8")
         data = json.loads(rawdata)
@@ -177,7 +130,7 @@ class ConnectionController(QWidget):
         
         if cmd == "hello_from_guest":
             self.send_to_opposite({"cmd": "start_common_stream"})
-            self.start_common_stream()
+            self.start_streams()
         else:
             print("unresolved command")        
 
@@ -186,7 +139,6 @@ class ConnectionController(QWidget):
         client.writeData(json.dumps(dct).encode("utf-8"))
 
     def stop_control_server(self):
-        print("StopControlServer")
         for c in self.clients:
             c.close()
         self.server.close()
@@ -194,18 +146,12 @@ class ConnectionController(QWidget):
     def enable_disable_clicked(self):
         try:
             if self.runned:
+                self.stop_streams()
                 self.stop_control_server()
-            #    self.stop_common_stream()
-            #    self.stop_recv_pipeline()       
-            #    self.stop_feedback_pipeline() 
                 self.enable_disable_button.setText("Включить")
                 self.runned = False
             else:
                 self.start_control_server()
-            #    self.setup_common_stream()
-            #    self.start_common_stream()
-            #    self.start_recv_pipeline()
-            #    self.start_feedback_pipeline()
                 self.enable_disable_button.setText("Отключить")
                 self.runned = True
             self.update_info()
@@ -216,53 +162,6 @@ class ConnectionController(QWidget):
                            traceback.format_exc())
             msgBox.exec()
         
-    def start_recv_pipeline(self):
-        self.raw_video_pipeline = self.video_pipeline.make_pipeline(
-            self.input_settings(self.video_pipeline),
-            self.output_settings(self.video_pipeline),
-            self.middle_settings(self.video_pipeline))
-        self.raw_audio_pipeline = self.audio_pipeline.make_pipeline(
-            self.input_settings(self.audio_pipeline),
-            self.output_settings(self.audio_pipeline),
-            self.middle_settings(self.audio_pipeline))
-        for pipeline in [
-            self.video_pipeline, 
-            self.audio_pipeline
-        ]:
-            pipeline.setup()
-            pipeline.start()
-        
-
-    def start_feedback_pipeline(self):
-        print("start_feedback_pipeline")
-        #self.feedback_raw_video_pipeline = self.feedback_video_pipeline.make_pipeline(
-        #   self.feedback_input_settings(self.feedback_video_pipeline),
-        #   self.feedback_output_settings(self.feedback_video_pipeline),
-        #   self.feedback_middle_settings(self.feedback_video_pipeline))
-        a=self.feedback_input_settings(MediaType.AUDIO)
-        b=self.feedback_output_settings(MediaType.AUDIO)
-        c=self.feedback_middle_settings(MediaType.AUDIO)        
-        self.feedback_raw_audio_pipeline = self.feedback_audio_pipeline.make_pipeline(a,b,c)
-        for pipeline in [
-        #   self.feedback_video_pipeline, 
-            self.feedback_audio_pipeline
-        ]:
-            pipeline.setup()
-            pipeline.start()
-
-    def stop_recv_pipeline(self):
-        print("stop_recv_pipeline")
-        for pipeline in [self.video_pipeline, self.audio_pipeline]:
-            pipeline.stop()
-
-    def stop_feedback_pipeline(self):
-        print("stop_feedback_pipeline")
-        for pipeline in [
-            #self.feedback_video_pipeline, 
-            self.feedback_audio_pipeline
-        ]:
-            pipeline.stop()
-
     def on_srt_video_caller_removed(self, srtsrc, a, pipeline):
         print("ON_SRT_VIDEO_REMOVE")
         self.video_connected = False
@@ -291,101 +190,6 @@ class ConnectionController(QWidget):
         self.audio_connected = True
         self.need_update = True
         
-    def input_settings(self, pipeline):
-        return StreamSettings(
-            mediatype = self.pipeline_mediatype(pipeline),
-            mode = SourceMode.STREAM,
-            transport = TransportType.SRT,
-            codec = self.pipeline_codec(pipeline),
-            port = self.pipeline_port(pipeline),
-            #on_srt_caller_removed = self.on_srt_video_caller_removed if pipeline is self.video_pipeline else self.on_srt_audio_caller_removed,
-            #on_srt_caller_added = self.on_srt_video_caller_added if pipeline is self.video_pipeline else self.on_srt_audio_caller_added,
-        )
-
-    def output_settings(self, pipeline):
-        return StreamSettings(
-            mediatype = self.pipeline_mediatype(pipeline),
-            mode = TranslateMode.STREAM,
-            transport = TransportType.NDI,
-            codec = VideoCodecType.NOCODEC,
-            ndi_name = self.ndi_name(pipeline),
-            udpspam = self.pipeline_udpspam(self.pipeline_mediatype(pipeline))
-        )       
-
-    def middle_settings(self, pipeline):
-        return MiddleSettings(
-            display_enabled = True,
-            width=160,
-            height=160,
-        )
-
-    def feedback_input_settings(self, mediatype):
-        input_array=[]
-        #sett = StreamSettings(
-        #   mediatype = mediatype,
-        #   mode = SourceMode.STREAM,
-        #   transport = TransportType.NDI,
-        #   codec = VideoCodecType.NOCODEC,
-        #   ndi_name = self.ndi_name_feedback(mediatype)
-        #)
-        #input_array.append(sett)
-        for i in self.audio_feedbacks():
-            print(internal_channel_udpspam_port(i))
-            sett = StreamSettings(
-                mediatype = mediatype,
-                mode = SourceMode.STREAM,
-                transport = TransportType.UDP,
-                codec = self.pipeline_codec(mediatype),
-                port = internal_channel_udpspam_port(i),
-            )
-            input_array.append(sett)  
-        return input_array
-
-    def feedback_output_settings(self, mediatype):
-        sett = StreamSettings(
-            mediatype = mediatype,
-            mode = TranslateMode.STREAM,
-            transport = TransportType.SRT,
-            codec = self.pipeline_codec(mediatype),
-            port = self.feedback_pipeline_port(mediatype)
-        )      
-        return sett 
-
-    def feedback_middle_settings(self, mediatype):
-        return MiddleSettings(
-            display_enabled = True,
-            width=160,
-            height=160,
-        )
-
-    def pipeline_codec(self, pipeline_mediatype):
-        if pipeline_mediatype is MediaType.VIDEO:
-            return VideoCodecType.H264
-        if pipeline_mediatype is MediaType.AUDIO:
-            return AudioCodecType.OPUS
-        if pipeline_mediatype is self.video_pipeline:
-            return VideoCodecType.H264
-        else:
-            return AudioCodecType.OPUS
-
-    def pipeline_port(self, pipeline):
-        if pipeline is self.video_pipeline:
-            return self.video_port()
-        else:
-            return self.audio_port()
-
-    def feedback_pipeline_port(self, mediatype):
-        if mediatype is MediaType.VIDEO:
-            return self.feedback_video_port()
-        else:
-            return self.feedback_audio_port()
-
-    def pipeline_mediatype(self, pipeline):
-        if pipeline is self.video_pipeline:
-            return MediaType.VIDEO
-        else:
-            return MediaType.AUDIO
-
     def ndi_name(self, pipeline):
         if pipeline is self.video_pipeline:
             return self.ndi_video_name()
@@ -456,6 +260,25 @@ class ConnectionController(QWidget):
         self.bus.connect("message::eos", self.eos_handle)
         self.common_pipeline.set_state(Gst.State.PLAYING)
 
+    def start_feedback_stream(self):
+        srtport = channel_feedback_mpeg_stream_port(self.channelno)
+        srtlatency = 80
+        self.feedback_pipeline = Gst.parse_launch(f"""
+            videotestsrc pattern=snow ! videoconvert ! queue ! tee name=videotee ! queue ! 
+                autovideosink name=fbvideoend
+
+            videotee. ! x264enc tune=zerolatency ! 
+            mpegtsmux ! srtsink uri=srt://:{srtport} latency={srtlatency} 
+        """)
+                
+        self.fbbus = self.feedback_pipeline.get_bus()
+        self.fbbus.add_signal_watch()
+        self.fbbus.enable_sync_message_emission()
+        self.fbbus.connect('sync-message::element', self.on_sync_message)
+        self.fbbus.connect('message::error', self.on_error_message)
+        self.fbbus.connect("message::eos", self.eos_handle)
+        self.feedback_pipeline.set_state(Gst.State.PLAYING)
+
     def new_sample(self, a, b):
         self.last_sample = time.time()
         return Gst.FlowReturn.OK
@@ -486,6 +309,13 @@ class ConnectionController(QWidget):
             self.sample_controller.stop()
             self.sample_controller = None
 
+    def stop_feedback_stream(self):
+        if self.feedback_pipeline:
+            self.feedback_pipeline.set_state(Gst.State.NULL)
+        time.sleep(0.1)
+        self.feedback_pipeline = None
+
+
     def on_sync_message(self, bus, msg):
         """Биндим контрольное изображение к переданному снаружи виджету."""
         #pass
@@ -495,6 +325,10 @@ class ConnectionController(QWidget):
                 self.display.connect_to_sink(msg.src)
             if name=="audioend":
                 self.spectroscope.connect_to_sink(msg.src)
+            if name=="fbvideoend":
+                self.feedback_display.connect_to_sink(msg.src)
+            if name=="fbaudioend":
+                self.feedback_spectroscope.connect_to_sink(msg.src)
 
     def eos_handle(self, bus, msg):
         """Конец потока вызывает пересборку конвеера.
@@ -508,6 +342,18 @@ class ConnectionController(QWidget):
 
     def on_error_message(self, bus, msg):
         print("on_error_message", msg.parse_error())
+
+    def start_streams(self):
+        self.start_common_stream()
+        time.sleep(0.2)
+        self.start_feedback_stream()
+        time.sleep(0.2)
+
+    def stop_streams(self):
+        self.stop_common_stream()
+        time.sleep(0.2)
+        self.stop_feedback_stream()
+        time.sleep(0.2)
 
 class ConnectionControllerZone(QWidget):
     def __init__(self):

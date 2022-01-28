@@ -26,7 +26,8 @@ from scicall.util import (
     channel_audio_port,
     channel_feedback_video_port,
     channel_feedback_audio_port,
-    channel_mpeg_stream_port
+    channel_mpeg_stream_port,
+    channel_feedback_mpeg_stream_port
 )
 
 import traceback
@@ -127,7 +128,7 @@ class GuestCaller(QWidget):
         return self.station_ip.text()
 
     def on_client_disconnect(self):
-        self.stop_common_stream()
+        self.stop_streams()
         print("GUEST : disconnect")
         self.connect_button.setText(self.connect_label_text)
 
@@ -148,7 +149,7 @@ class GuestCaller(QWidget):
             self.send_to_opposite({"cmd": "hello_from_guest"})
         elif cmd == "start_common_stream":
             time.sleep(0.2)
-            self.start_common_stream()
+            self.start_streams()
         else:
             print("unresolved command")        
 
@@ -158,7 +159,7 @@ class GuestCaller(QWidget):
     def connect_action(self):
         if self.client.state() == QTcpSocket.ConnectedState:
             self.client.disconnectFromHost()
-            self.stop_common_stream()
+            self.stop_streams()
             return 
 
         print("tryConnectTo server")
@@ -171,8 +172,6 @@ class GuestCaller(QWidget):
             msgBox.setText("Не удалось установить соединение с сервером.")
             msgBox.exec()
 
-
-
     def video_device(self):
         return self.videos[self.video_source.currentIndex()]
 
@@ -182,15 +181,6 @@ class GuestCaller(QWidget):
     def on_connect_button_clicked(self):
         self.client.open(self.ip, channel_connect_port(self.channelno()))
 
-    def on_message(self, msg):
-        print(msg)
-
-    def on_connect(self):
-        print("on_connect")
-
-    def on_disconnect(self):
-        print("on_disconnect")
-
     def video_clicked(self):
         self.enable_disable_video_input()
 
@@ -198,72 +188,10 @@ class GuestCaller(QWidget):
         self.enable_disable_audio_input()
 
     def feed_video_clicked(self):
-        if self.feedback_video_pipeline.runned():
-            self.stop_pipeline(self.feedback_video_pipeline)
-        else:
-            self.start_feedback_pipeline(self.feedback_video_pipeline, MediaType.VIDEO)
+        pass
 
     def feed_audio_clicked(self):
-        if self.feedback_audio_pipeline.runned():
-            self.stop_pipeline(self.feedback_audio_pipeline)
-        else:
-            self.start_feedback_pipeline(self.feedback_audio_pipeline, MediaType.AUDIO)
-
-    def set_info(self):
-        self.status_label.setText(f"""Статус:
-Подключено: нет
-Видео: {self.video_status()}
-Аудио: {self.audio_status()}
-""")
-
-    def start_pipeline(self, pipeline):
-        pipeline.make_pipeline(
-            self.input_settings(pipeline),
-            self.output_settings(pipeline),
-            self.middle_settings(pipeline))
-        pipeline.setup()
-        pipeline.start()
-
-        self.set_info()
-
-    def start_feedback_pipeline(self, pipeline, mediatype):
-        pipeline.make_pipeline(
-            self.feedback_input_settings(mediatype),
-            self.feedback_output_settings(mediatype),
-            self.feedback_middle_settings(mediatype))
-        pipeline.setup()
-        pipeline.start()
-
-    def stop_pipeline(self, pipeline):
-        pipeline.stop()
-
-    def pipeline_codec(self, pipeline):
-        if pipeline is MediaType.VIDEO:
-            return VideoCodecType.H264
-        if pipeline is MediaType.AUDIO:
-            return AudioCodecType.OPUS          
-        if pipeline is self.video_pipeline:
-            return VideoCodecType.H264
-        else:
-            return AudioCodecType.OPUS
-        
-    def pipeline_mediatype(self, pipeline):
-        if pipeline is self.video_pipeline:
-            return MediaType.VIDEO
-        else:
-            return MediaType.AUDIO
-
-    def pipeline_port(self, pipeline):
-        if pipeline is self.video_pipeline:
-            return channel_video_port(self.channelno())
-        else:
-            return channel_audio_port(self.channelno())
-
-    def pipeline_feedback_port(self, pipeline):
-        if pipeline is MediaType.VIDEO:
-            return channel_feedback_video_port(self.channelno())
-        else:
-            return channel_feedback_audio_port(self.channelno())
+        pass
 
     def channelno(self):
         return int(self.channel_list.currentText()) - 1
@@ -273,51 +201,6 @@ class GuestCaller(QWidget):
             return self.video_device()
         else:
             return self.audio_device()
-
-    def input_settings(self, mediatype):
-        return StreamSettings(
-            mediatype= mediatype,
-            mode = SourceMode.CAPTURE,
-            device = self.input_device(mediatype)
-        )
-
-    def output_settings(self, pipeline):
-        return StreamSettings(
-            mediatype= self.pipeline_mediatype(pipeline),
-            mode = TranslateMode.STREAM,
-            transport = TransportType.SRTREMOTE,
-            codec = self.pipeline_codec(pipeline),
-            port = self.pipeline_port(pipeline),
-            ip = self.station_ip.text()
-        )       
-
-    def middle_settings(self, pipeline):
-        return MiddleSettings(
-            display_enabled = True,
-            mediatype = self.pipeline_mediatype(pipeline)
-        )
-    
-
-    def feedback_input_settings(self, mediatype):
-        return StreamSettings(
-            mediatype= mediatype,
-            mode = SourceMode.STREAM,
-            codec = self.pipeline_codec(mediatype),
-            transport = TransportType.SRTREMOTE,
-            ip = self.station_ip.text(),
-            port = self.pipeline_feedback_port(mediatype)
-        )
-
-    def feedback_output_settings(self, mediatype):
-        return StreamSettings(
-            mode=TranslateMode.NOTRANS
-        )       
-
-    def feedback_middle_settings(self, mediatype):
-        return MiddleSettings(
-            display_enabled = True,
-            mediatype = mediatype
-        )
 
     def start_common_stream(self):
         """ gst-launch-1.0 videotestsrc ! videoconvert ! x264enc ! mpegtsmux name=mux ! srtsink uri=srt://127.0.0.1:20106 audiotestsrc ! audioconvert ! opusenc ! mux. """
@@ -372,6 +255,24 @@ class GuestCaller(QWidget):
 
         self.viden = True
 
+    def start_feedback_stream(self):
+        srtport = channel_feedback_mpeg_stream_port(self.channelno())
+        srtlatency = 80
+        srthost = self.station_ip.text()
+        self.feedback_pipeline = Gst.parse_launch(f"""
+            srtsrc uri=srt://{srthost}:{srtport} latency={srtlatency} ! tsdemux name=t 
+            t. ! h264parse ! avdec_h264 ! videoconvert ! queue ! 
+                tee name=videotee ! queue ! autovideosink name=fbvideoend 
+        """)
+                
+        self.fbbus = self.feedback_pipeline.get_bus()
+        self.fbbus.add_signal_watch()
+        self.fbbus.enable_sync_message_emission()
+        self.fbbus.connect('sync-message::element', self.on_sync_message)
+        #self.fbbus.connect('message::error', self.on_error_message)
+        #self.fbbus.connect("message::eos", self.eos_handle)
+        self.feedback_pipeline.set_state(Gst.State.PLAYING)
+
     def on_sync_message(self, bus, msg):
         """Биндим контрольное изображение к переданному снаружи виджету."""
         #pass
@@ -381,43 +282,34 @@ class GuestCaller(QWidget):
                 self.display_widget.connect_to_sink(msg.src)
             if name=="audioend":
                 self.spectroscope_widget.connect_to_sink(msg.src)
+            if name=="fbvideoend":
+                self.feedback_display_widget.connect_to_sink(msg.src)
+            if name=="fbaudioend":
+                self.feedback_spectroscope_widget.connect_to_sink(msg.src)
         
     def stop_common_stream(self):
         if self.common_pipeline:
             self.common_pipeline.set_state(Gst.State.NULL)
         self.common_pipeline = None
 
+    def stop_feedback_stream(self):
+        if self.feedback_pipeline:
+            self.feedback_pipeline.set_state(Gst.State.NULL)
+        self.feedback_pipeline = None        
+
     def enable_disable_video_input(self):
         if self.viden is True:
-            self.videosrc.set_state(Gst.State.READY)
-            print("DISABLE")   
+            self.videosrc.set_state(Gst.State.NULL)
             self.viden = False  
             self.vcompose_sink_0.set_property("alpha", 0)       
             self.vcompose_sink_1.set_property("alpha", 1)
             
         else:
             self.videosrc.set_state(Gst.State.PLAYING)            
-            print("ENABLE") 
             self.vcompose_sink_0.set_property("alpha", 1)       
             self.vcompose_sink_1.set_property("alpha", 0)  
             self.viden = True
 
-
-        #if self.fakevideosrc.is_enabled():
-        #    self.common_pipeline.set_state(Gst.State.NULL)
-        #    self.fakevideosrc.unlink(self.vconv)
-        #    self.fakevideosrc.remove_from_pipeline(self.common_pipeline)
-        #    self.videosrc.add_to_pipeline(self.common_pipeline)
-        #    self.videosrc.link(self.vconv)
-        #    self.common_pipeline.set_state(Gst.State.PLAYING)
-        #else:
-        #    self.common_pipeline.set_state(Gst.State.NULL)
-        #    self.videosrc.unlink(self.vconv)
-        #    self.videosrc.remove_from_pipeline(self.common_pipeline)
-        #    self.fakevideosrc.add_to_pipeline(self.common_pipeline)
-        #    self.fakevideosrc.link(self.vconv)
-        #    self.common_pipeline.set_state(Gst.State.PLAYING)
-        
     def enable_disable_audio_input(self):
         self.audiosrc_tee.set_state(Gst.State.PAUSED)
         if self.fakeaudiosrc.is_enabled():
@@ -436,26 +328,14 @@ class GuestCaller(QWidget):
             self.fakeaudiosrc.set_state(Gst.State.PLAYING)
         self.audiosrc_tee.set_state(Gst.State.PLAYING)
         
-    def test_action(self):
-        try:
-            #self.start_control_server()
-            if self.runned:
-                self.stop_common_stream()
-            #    self.stop_recv_pipeline()       
-            #    self.stop_feedback_pipeline() 
-                #self.enable_disable_button.setText("Включить")
-                self.runned = False
-            else:
-                self.setup_common_stream()
-                self.start_common_stream()
-            #    self.start_recv_pipeline()
-            #    self.start_feedback_pipeline()
-                #self.enable_disable_button.setText("Отключить")
-                self.runned = True
-            #self.update_info()
-        except Exception as ex:
-            traceback.print_exc()
-            msgBox = QMessageBox()
-            msgBox.setText("Возникла непредвиденная ситуация:\r\n" +
-                           traceback.format_exc())
-            msgBox.exec()
+    def start_streams(self):
+        self.start_common_stream()
+        time.sleep(0.2)
+        self.start_feedback_stream()
+        time.sleep(0.2)
+
+    def stop_streams(self):
+        self.stop_common_stream()
+        time.sleep(0.2)
+        self.stop_feedback_stream()
+        time.sleep(0.2)

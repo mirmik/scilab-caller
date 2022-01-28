@@ -6,20 +6,15 @@ gi.require_version('Gst', '1.0')
 gi.require_version('GstVideo', '1.0')
 from gi.repository import GObject, Gst, GstVideo
 
-from scicall.stream_settings import SourceMode, TranslateMode, MediaType
 from scicall.util import get_filtered_devices_list, start_device_monitor, stop_device_monitor
-from scicall.stream_pipeline import StreamPipeline
-from scicall.control_panel import ControlPanel
 from scicall.guest_caller import GuestCaller
 from scicall.guest_controller import ConnectionController, ConnectionControllerZone
-from scicall.interaptor import Interaptor
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from enum import Enum
 import traceback
 import sys
-from scicall.finisher import setup_interrupt_handlers, invoke_destructors
 
 class GstreamerDisplay(QWidget):
     """ Виджет, в котором рисует выходной элемент видоконвеера """

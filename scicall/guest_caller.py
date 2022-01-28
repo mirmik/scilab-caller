@@ -6,20 +6,8 @@ from gi.repository import GObject, Gst, GstVideo
 import json
 import time
 
-from scicall.stream_pipeline import StreamPipeline, SourceBuilder
 from scicall.display_widget import GstreamerDisplay
 from scicall.util import get_video_captures_list, get_audio_captures_list
-from scicall.stream_settings import (
-    StreamSettings,
-    SourceMode,
-    TranslateMode,
-    VideoCodecType,
-    AudioCodecType,
-    TransportType,
-    MediaType,
-    MiddleSettings
-)
-
 from scicall.util import (
     channel_control_port, 
     channel_video_port, 
@@ -30,6 +18,10 @@ from scicall.util import (
     channel_feedback_mpeg_stream_port
 )
 
+from scicall.stream_settings import (
+    MediaType,
+)
+
 import traceback
 import scicall.pipeline_utils as pipeline_utils
 
@@ -37,6 +29,13 @@ class GuestCaller(QWidget):
     """ Пользовательский виджет реализует удалённой станции. """
 
     def __init__(self):
+        self.VIDEO_DISABLE_TEXT = "Камера(отключить)"
+        self.VIDEO_ENABLE_TEXT = "Камера(включить)"
+        self.AUDIO_DISABLE_TEXT = "Микрофон(отключить)"
+        self.AUDIO_ENABLE_TEXT = "Микрофон(включить)"
+        self.OAUDIO_DISABLE_TEXT = "Динамик(отключить)"
+        self.OAUDIO_ENABLE_TEXT = "Динамик(включить)"
+
         super().__init__()
         self.videos = get_video_captures_list(default=True,test=True)
         self.audios = [ a for a in get_audio_captures_list(default=True,test=True) if a.is_supported() ]
@@ -63,11 +62,26 @@ class GuestCaller(QWidget):
         self.video_source.addItems([ r.user_readable_name() for r in self.videos ])
         self.audio_source = QComboBox()
         self.audio_source.addItems([ r.user_readable_name() for r in self.audios ])
-        self.video_enable_button = QPushButton("Видео")
-        self.audio_enable_button = QPushButton("Аудио")
-        self.feed_video_enable_button = QPushButton("Видео(обратный)")
-        self.feed_audio_enable_button = QPushButton("Аудио(обратный)")
+        self.video_enable_button = QPushButton(self.VIDEO_DISABLE_TEXT)
+        self.audio_enable_button = QPushButton(self.AUDIO_DISABLE_TEXT)
+        self.feed_video_enable_button = QPushButton("")
+        self.feed_audio_enable_button = QPushButton(self.OAUDIO_DISABLE_TEXT)
+        self.feed_video_enable_button.setEnabled(False)
 
+        self.volume_slider = QSlider(Qt.Horizontal)
+        self.fb_volume_slider = QSlider(Qt.Horizontal)
+
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximum(2000)
+        self.volume_slider.setValue(1000)
+        self.volume_slider.sliderMoved.connect(self.volume_action)
+
+        self.fb_volume_slider.setMinimum(0)
+        self.fb_volume_slider.setMaximum(2000)
+        self.fb_volume_slider.setValue(1000)
+        self.fb_volume_slider.sliderMoved.connect(self.fb_volume_action)
+
+        self.gpuchecker = pipeline_utils.GPUChecker()
         self.connect_label_text = "Установить соединение"
         self.disconnect_label_text = "Разорвать соединение"
         self.connect_button = QPushButton(self.connect_label_text)
@@ -78,6 +92,13 @@ class GuestCaller(QWidget):
         self.control_layout = QGridLayout()
         self.avpanel_layout = QHBoxLayout()
         self.avpanel_feed_layout = QHBoxLayout()
+        self.volume_layout = QHBoxLayout()
+        self.fb_volume_layout = QHBoxLayout()
+
+        #self.volume_layout.addWidget(QLabel("Громкость:"))
+        self.volume_layout.addWidget(self.volume_slider)
+        #self.fb_volume_layout.addWidget(QLabel("Громкость:"))
+        self.fb_volume_layout.addWidget(self.fb_volume_slider)
 
         #self.info_layout.addWidget(self.status_label)
 
@@ -85,31 +106,33 @@ class GuestCaller(QWidget):
         self.control_layout.addWidget(QLabel("Номер канала:"), 1, 0)
         self.control_layout.addWidget(QLabel("Источник видео:"), 2, 0)
         self.control_layout.addWidget(QLabel("Источник звука:"), 3, 0)
+        self.control_layout.addWidget(QLabel("Аппаратное ускорение:\n(поддерживаются карты\nnvidia)"), 4, 0)
         self.control_layout.addWidget(self.station_ip, 0, 1)
         self.control_layout.addWidget(self.channel_list, 1, 1)
         self.control_layout.addWidget(self.video_source, 2, 1)
         self.control_layout.addWidget(self.audio_source, 3, 1)
-        self.control_layout.addWidget(self.connect_button, 4, 0, 1, 2)
+        self.control_layout.addWidget(self.gpuchecker, 4, 1)
+        self.control_layout.addWidget(self.connect_button, 5, 0, 1, 2)
 
         self.avpanel_layout.addWidget(self.video_enable_button)
         self.avpanel_layout.addWidget(self.audio_enable_button)
         self.avpanel_feed_layout.addWidget(self.feed_video_enable_button)
         self.avpanel_feed_layout.addWidget(self.feed_audio_enable_button)
+
         self.left_layout.addWidget(self.display_widget)     
         self.left_layout.addWidget(self.spectroscope_widget)
-        self.left_feed_layout.addWidget(self.feedback_display_widget)       
-        self.left_feed_layout.addWidget(self.feedback_spectroscope_widget)
+        self.left_layout.addLayout(self.volume_layout)
         self.left_layout.addLayout(self.avpanel_layout)
+        
+        self.left_feed_layout.addWidget(self.feedback_display_widget)       
+        self.left_feed_layout.addWidget(self.feedback_spectroscope_widget)       
+        self.left_feed_layout.addLayout(self.fb_volume_layout)
         self.left_feed_layout.addLayout(self.avpanel_feed_layout)
 
         self.main_layout.addLayout(self.left_layout)
         self.main_layout.addLayout(self.left_feed_layout)
         self.main_layout.addLayout(self.control_layout)
 
-        self.audio_pipeline = StreamPipeline(self.spectroscope_widget)
-        self.video_pipeline = StreamPipeline(self.display_widget)
-        self.feedback_audio_pipeline = StreamPipeline(self.feedback_spectroscope_widget)
-        self.feedback_video_pipeline = StreamPipeline(self.feedback_display_widget)
         self.setLayout(self.main_layout)
         self.client = QTcpSocket()
 
@@ -123,6 +146,23 @@ class GuestCaller(QWidget):
         self.client.disconnected.connect(self.on_client_disconnect)
         self.client.readyRead.connect(self.client_ready_read)
         self.connect_button.clicked.connect(self.connect_action)
+
+        self.common_pipeline = None
+        self.feedback_pipeline = None
+
+    def volume_action(self):
+        if self.common_pipeline:
+            val = self.volume_slider.value()
+            if val < 50: val = 0
+            if val > 1950: val = 2000 
+            self.common_pipeline.get_by_name("volume").set_property("volume", val/1000)
+
+    def fb_volume_action(self):
+        if self.feedback_pipeline:
+            val = self.fb_volume_slider.value()
+            if val < 50: val = 0
+            if val > 1950: val = 2000
+            self.feedback_pipeline.get_by_name("fbvolume").set_property("volume", val/1000)
 
     def opposite_ip(self):
         return self.station_ip.text()
@@ -191,7 +231,7 @@ class GuestCaller(QWidget):
         pass
 
     def feed_audio_clicked(self):
-        pass
+        self.enable_disable_feed_audio_input()
 
     def channelno(self):
         return int(self.channel_list.currentText()) - 1
@@ -202,37 +242,45 @@ class GuestCaller(QWidget):
         else:
             return self.audio_device()
 
-    def start_common_stream(self):
-        """ gst-launch-1.0 videotestsrc ! videoconvert ! x264enc ! mpegtsmux name=mux ! srtsink uri=srt://127.0.0.1:20106 audiotestsrc ! audioconvert ! opusenc ! mux. """
+    def get_gpu_type(self):
+        return self.gpuchecker.get()
 
+    def start_common_stream(self):
         video_device = self.input_device(MediaType.VIDEO).to_pipeline_string()
         audio_device = self.input_device(MediaType.AUDIO).to_pipeline_string()
 
-        #codertype = "nvidia"
-        #if codertype == "cpu":
-        #    videocoder = "x264enc tune=zerolatency" 
-        #elif codertype == "nvidia":
-        #    videocoder = "nvh264enc"
-        #videocoder = "vaapih264enc"
-        videocoder = "x264enc tune=zerolatency"
-        
-        vstublocation = "c:/users/asus/test.png"
+        videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
         srtport = channel_mpeg_stream_port(self.channelno())
         srtlatency = 80
         srthost = self.station_ip.text()
-        pipeline_string = f"""mpegtsmux name=m ! queue name=q0 
-                ! srtsink uri=srt://{srthost}:{srtport} name=srtout wait-for-connection=true latency={srtlatency} sync=false async=true
-                {video_device} name=cam ! videoscale name=vconv ! videoconvert ! video/x-raw,width=640,height=480,framerate=30/1 ! compositor name=videocompositor ! queue name=l0 ! tee name=t1 ! queue name=qt0 ! videoconvert ! {videocoder} ! queue name=q1 ! m. 
-                {audio_device} name=mic ! audioconvert name=aconv ! queue name=l1 ! tee name=t2 ! queue name=qt1 ! audioconvert ! opusenc ! queue name=q2 ! m.
-                t1. ! queue name=qt2 ! videoconvert ! autovideosink sync=false name=videoend
-                t2. ! queue name=qt3 ! audioconvert ! spectrascope ! videoconvert ! autovideosink sync=false name=audioend
-                videotestsrc pattern=snow ! textoverlay text="Нет изображения" valignment=center halignment=center font-desc="Sans, 72" ! videoscale ! video/x-raw,width=640,height=480 ! videocompositor.
-             """
+        pipeline_string = f"""
+            {video_device} name=cam ! videoscale ! videoconvert ! 
+                video/x-raw,width=640,height=480,framerate=30/1 ! videocompositor. 
+            videotestsrc pattern=snow name=fakevideosrc ! textoverlay text="Нет изображения" 
+                valignment=center halignment=center font-desc="Sans, 72" ! videoscale ! 
+                    video/x-raw,width=640,height=480 ! videocompositor.
+            compositor name=videocompositor ! tee name=videotee
+
+            {audio_device} name=mic ! audioconvert ! volume name=volume ! volume name=onoffvol 
+                ! tee name=audiotee 
+
+            videotee. ! queue name=q0 ! videoconvert ! {videocoder} ! 
+                video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1 ! 
+                     muxer.
+            videotee. ! queue name=q1 !videoconvert ! autovideosink sync=false name=videoend
+
+            audiotee. ! queue name=q2 ! audioconvert ! opusenc ! muxer.                        
+            audiotee. ! queue name=q3 !audioconvert ! spectrascope ! videoconvert ! 
+                autovideosink sync=false name=audioend
+            
+            mpegtsmux name=muxer ! srtsink uri=srt://{srthost}:{srtport} 
+                name=srtout wait-for-connection=true latency={srtlatency} sync=false async=true
+            """
         print (pipeline_string)
         self.common_pipeline = Gst.parse_launch(pipeline_string)
 
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
-            "q0", "q1", "q2", "qt0", "qt1", "qt2", "qt3", "l1", "l0"
+            "q0", "q1", "q2", "q3"
         ]]
         for q in qs:
             q.set_property("max-size-bytes", 100000) 
@@ -245,8 +293,7 @@ class GuestCaller(QWidget):
         self.common_pipeline.set_state(Gst.State.PLAYING)
 
         #self.fakevideosrc = pipeline_utils.imagesource("c:/users/asus/test.png")
-        self.fakevideosrc = pipeline_utils.videotestsrc()
-
+        self.fakevideosrc = self.common_pipeline.get_by_name("fakevideosrc")
         self.videosrc = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("cam")) 
         self.audiosrc = self.common_pipeline.get_by_name("mic")
         self.vconv = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("vconv")) 
@@ -263,16 +310,33 @@ class GuestCaller(QWidget):
         print(self.vcompose_sink_0)
 
         self.viden = True
+        self.auden = True
+        self.feed_auden = True
 
     def start_feedback_stream(self):
+
+        videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
+
         srtport = channel_feedback_mpeg_stream_port(self.channelno())
         srtlatency = 80
         srthost = self.station_ip.text()
         self.feedback_pipeline = Gst.parse_launch(f"""
-            srtsrc uri=srt://{srthost}:{srtport} latency={srtlatency} ! tsdemux name=t 
-            t. ! h264parse ! avdec_h264 ! videoconvert ! queue ! 
-                tee name=videotee ! queue ! autovideosink name=fbvideoend 
+            srtsrc uri=srt://{srthost}:{srtport} latency={srtlatency} ! tsdemux name=demux 
+            demux. ! h264parse ! {videodecoder} ! videoconvert ! tee name=videotee 
+            demux. ! opusparse ! opusdec ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
+                ! tee name=audiotee
+            videotee. ! autovideosink name=fbvideoend sync=false
+            audiotee. ! queue name=q2 ! audioconvert ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
+            audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! 
+                videoconvert ! autovideosink name=fbaudioend sync=false
         """)
+
+        qs = [ self.feedback_pipeline.get_by_name(qname) for qname in [
+            "q2", "q3"
+        ]]
+        for q in qs:
+            q.set_property("max-size-bytes", 100000) 
+            q.set_property("max-size-buffers", 0) 
                 
         self.fbbus = self.feedback_pipeline.get_bus()
         self.fbbus.add_signal_watch()
@@ -309,41 +373,48 @@ class GuestCaller(QWidget):
     def enable_disable_video_input(self):
         if self.viden is True:
             self.videosrc.set_state(Gst.State.NULL)           
-            self.fakevideosrc.set_state(Gst.State.PLAYING)
+            #self.fakevideosrc.set_state(Gst.State.PLAYING)
             self.viden = False  
             self.vcompose_sink_0.set_property("alpha", 0)       
             self.vcompose_sink_1.set_property("alpha", 1)
-            
+            self.video_enable_button.setText(self.VIDEO_ENABLE_TEXT)            
         else:
             self.videosrc.set_state(Gst.State.PLAYING)            
-            self.fakevideosrc.set_state(Gst.State.NULL)            
+            #self.fakevideosrc.set_state(Gst.State.NULL)            
             self.vcompose_sink_0.set_property("alpha", 1)       
             self.vcompose_sink_1.set_property("alpha", 0)  
+            self.video_enable_button.setText(self.VIDEO_DISABLE_TEXT)
             self.viden = True
 
     def enable_disable_audio_input(self):
-        self.audiosrc_tee.set_state(Gst.State.PAUSED)
-        if self.fakeaudiosrc.is_enabled():
-            self.fakeaudiosrc.set_state(Gst.State.NULL)
-            self.fakeaudiosrc.unlink(self.audiosrc_tee)
-            self.fakeaudiosrc.remove_from_pipeline(self.common_pipeline)
-            self.audiosrc.add_to_pipeline(self.common_pipeline)
-            self.audiosrc.link(self.audiosrc_tee)
-            self.audiosrc.set_state(Gst.State.PLAYING)
+        if self.auden is True:
+            self.common_pipeline.get_by_name("onoffvol").set_property("volume", 0) 
+            self.audio_enable_button.setText(self.AUDIO_ENABLE_TEXT)              
+            self.auden = False  
         else:
-            self.audiosrc.set_state(Gst.State.NULL)
-            self.audiosrc.unlink(self.audiosrc_tee)
-            self.audiosrc.remove_from_pipeline(self.common_pipeline)
-            self.fakeaudiosrc.add_to_pipeline(self.common_pipeline)
-            self.fakeaudiosrc.link(self.audiosrc_tee)
-            self.fakeaudiosrc.set_state(Gst.State.PLAYING)
-        self.audiosrc_tee.set_state(Gst.State.PLAYING)
+            self.common_pipeline.get_by_name("onoffvol").set_property("volume", 1)   
+            self.audio_enable_button.setText(self.AUDIO_DISABLE_TEXT)  
+            self.auden = True
+
+    def enable_disable_feed_audio_input(self):
+        if self.feed_auden is True:
+            self.feedback_pipeline.get_by_name("onoffvol").set_property("volume", 0) 
+            self.feed_audio_enable_button.setText(self.OAUDIO_ENABLE_TEXT)   
+            #self.feedback_pipeline.get_by_name("asink").set_state(Gst.State.NULL)           
+            self.feed_auden = False  
+        else:
+            self.feedback_pipeline.get_by_name("onoffvol").set_property("volume", 1)   
+            self.feed_audio_enable_button.setText(self.OAUDIO_DISABLE_TEXT)  
+            #self.feedback_pipeline.get_by_name("asink").set_state(Gst.State.PLAYING)         
+            self.feed_auden = True
         
     def start_streams(self):
         self.start_common_stream()
         time.sleep(0.2)
         self.start_feedback_stream()
         time.sleep(0.2)
+        self.volume_action()
+        self.fb_volume_action()
 
     def stop_streams(self):
         self.stop_common_stream()

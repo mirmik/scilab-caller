@@ -6,7 +6,6 @@ from gi.repository import GObject, Gst, GstVideo
 import traceback
 import time
 
-from scicall.stream_pipeline import StreamPipeline
 from scicall.display_widget import GstreamerDisplay
 import scicall.pipeline_utils as pipeline_utils
 import json
@@ -21,20 +20,11 @@ from scicall.util import (
     channel_mpeg_stream_port,
     channel_feedback_mpeg_stream_port)
 
-from scicall.stream_settings import (
-    StreamSettings,
-    MiddleSettings,
-    SourceMode,
-    MediaType,
-    TranslateMode,
-    TransportType,
-    VideoCodecType,
-    AudioCodecType
-)
 
 class ConnectionController(QWidget):
-    def __init__(self, number):
+    def __init__(self, number, zone):
         super().__init__()
+        self.zone = zone
         self.flow_runned = False
         self.audio_feedback_checkboxes = []
         self.video_connected = False
@@ -83,12 +73,23 @@ class ConnectionController(QWidget):
         self.setLayout(self.layout)
         self.update_info()
 
+        self.common_pipeline=None
+        self.feedback_pipeline=None
+        self.sample_controller=None
+
     def make_checkboxes_for_sound_feedback(self):
         for i in range(3):
             wdg = QCheckBox("Ретранс. звука: " + str(i))
             if self.channelno != i: wdg.setChecked(True)
             self.control_layout.addWidget(wdg)
             self.audio_feedback_checkboxes.append(wdg)
+
+    def sound_feedback_list(self):
+        ret=[]
+        for i in range(3):
+            if self.audio_feedback_checkboxes[i].isChecked():
+                ret.append(i)
+        return ret
 
     def update_info(self):
         self.need_update = False
@@ -214,24 +215,30 @@ class ConnectionController(QWidget):
     def ndi_audio_name_feedback(self):
         return f"Guest{self.channelno+1}-Audio0-Feedback"
 
-    def pipeline_udpspam(self, mediatype):
-        if mediatype == MediaType.VIDEO:
-            return False
-        else:
-            return internal_channel_udpspam_port(self.channelno)
+    def get_gpu_type(self):
+        return self.zone.get_gpu_type()
 
     def start_common_stream(self):
+        videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
         srtport = channel_mpeg_stream_port(self.channelno)
         srtlatency = 80
+        udpspam = internal_channel_udpspam_port(self.channelno)
         self.common_pipeline = Gst.parse_launch(
             f"""srtsrc uri=srt://:{srtport} wait-for-connection=true latency={srtlatency} 
-                ! queue name=q0 ! tsparse ! tsdemux name=t 
-                ! queue name=q1 ! h264parse ! avdec_h264 ! tee name=t1 ! queue name=qt0 ! videoconvert ! autovideosink sync=false name=videoend
-             t. ! queue name=q2 ! opusparse ! opusdec ! tee name=t2 ! queue name=qt1 !audioconvert ! spectrascope ! videoconvert ! autovideosink sync=false name=audioend
-             t1. ! queue name=qt2 ! appsink name=appsink
+                    ! queue name=q0 ! tsparse ! tsdemux name=demuxer
+
+            demuxer. ! queue name=q1 ! h264parse ! {videodecoder} ! tee name=t1 
+            demuxer. ! queue name=q2 ! opusparse ! opusdec ! tee name=t2 
+            
+            t1. ! queue name=qt0 ! videoconvert ! autovideosink sync=false name=videoend
+            t1. ! queue name=qt2 ! appsink name=appsink
+        
+            t2. ! queue name=qt1 !audioconvert ! spectrascope ! videoconvert ! 
+                autovideosink sync=false name=audioend
+            t2. ! queue name=qt3 !audioconvert ! opusenc ! udpsink host=127.0.0.1 port={udpspam} sync=false
         """)
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
-            "q0", "q1", "q2", "qt0", "qt1", "qt2"
+            "q0", "q1", "q2", "qt0", "qt1", "qt2", "qt3"
         ]]
         for q in qs:
             q.set_property("max-size-bytes", 100000) 
@@ -263,13 +270,39 @@ class ConnectionController(QWidget):
     def start_feedback_stream(self):
         srtport = channel_feedback_mpeg_stream_port(self.channelno)
         srtlatency = 80
-        self.feedback_pipeline = Gst.parse_launch(f"""
-            videotestsrc pattern=snow ! videoconvert ! queue ! tee name=videotee ! queue ! 
-                autovideosink name=fbvideoend
 
-            videotee. ! x264enc tune=zerolatency ! 
-            mpegtsmux ! srtsink uri=srt://:{srtport} latency={srtlatency} 
-        """)
+        videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
+
+        udpaudiomix = ""
+        for i in self.sound_feedback_list():
+            udpaudiomix = udpaudiomix + f"""udpsrc port={internal_channel_udpspam_port(i)} reuse=true ! opusparse ! 
+                opusdec ! audioconvert ! queue name=uq{i} ! amixer. \n"""
+
+        pstr = f"""
+            videotestsrc pattern=snow ! videoconvert ! queue name=q0 ! tee name=videotee ! queue name=q2 ! 
+                autovideosink name=fbvideoend sync=false
+
+            videotee. ! {videocoder} ! 
+                video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1 !
+            mpegtsmux name=m ! srtsink uri=srt://:{srtport} latency={srtlatency} sync=false
+
+            audiomixer name=amixer ! tee name=audiotee ! queue name=q1 ! audioconvert ! opusenc ! m.
+            audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! 
+                videoconvert ! autovideosink name=fbaudioend sync=false
+
+            {udpaudiomix}
+        """
+        print(pstr)
+
+        self.feedback_pipeline = Gst.parse_launch(pstr)
+
+        qs = [ "q0", "q1", "q2", "q3" ] + [f"uq{i}" for i in self.sound_feedback_list()]
+        print(qs)
+        qs = [ self.feedback_pipeline.get_by_name(qname) for qname in qs ]
+        print(qs)
+        for q in qs:
+            q.set_property("max-size-bytes", 100000) 
+            q.set_property("max-size-buffers", 0) 
                 
         self.fbbus = self.feedback_pipeline.get_bus()
         self.fbbus.add_signal_watch()
@@ -360,13 +393,22 @@ class ConnectionControllerZone(QWidget):
         super().__init__()
         self.zones = []
         self.vlayout = QVBoxLayout()
-
+        self.hlayout = QHBoxLayout()
+        self.gpuchecker = pipeline_utils.GPUChecker()
+        self.hlayout.addWidget(QLabel("Использовать аппаратное ускорение: "))
+        self.hlayout.addWidget(self.gpuchecker)
+        self.vlayout.addLayout(self.hlayout)
+        self.gpuchecker.set(pipeline_utils.GPUType.NVIDIA)
+        
         for i in range(3):
-            self.add_zone(i)
+            self.add_zone(i, self)
 
         self.setLayout(self.vlayout)
 
-    def add_zone(self, i):
-        wdg = ConnectionController(i)
+    def get_gpu_type(self):
+        return self.gpuchecker.get()
+
+    def add_zone(self, i, zone):
+        wdg = ConnectionController(i, zone)
         self.zones.append(wdg)
         self.vlayout.addWidget(wdg)

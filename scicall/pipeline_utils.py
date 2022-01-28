@@ -1,5 +1,10 @@
 from gi.repository import GObject, Gst, GstVideo
 from scicall.util import pipeline_chain
+from enum import Enum
+
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
 
 class GstSubchain:
     def __init__(self, *arr):
@@ -234,3 +239,45 @@ def quiteaudio():
     src.set_property("is-live", True)
     src.set_property("volume", 0)
     return GstSubchain(src)
+
+class GPUType(str, Enum):
+    CPU = "Нет",
+    NVIDIA = "Видеокарта nvidia",
+    AUTOMATIC = "Автоматически (тестируется)",
+
+def video_decoder_type(codertype):
+    if codertype == GPUType.CPU:
+        videodecoder = "avdec_h264" 
+    elif codertype == GPUType.NVIDIA:
+        videodecoder = "nvh264dec"
+    return videodecoder 
+
+def video_coder_type(codertype):
+    if codertype == GPUType.CPU:
+        videocoder = "x264enc tune=zerolatency" 
+    elif codertype == GPUType.NVIDIA:
+        videocoder = "nvh264enc"
+    return videocoder
+
+def get_gpu_type():
+    return GPUType.NVIDIA
+
+class GPUChecker(QComboBox):
+    def __init__(self):
+        super().__init__()
+        
+        for a in GPUType:
+            self.addItem(a)
+
+    def get(self):
+        text = self.currentText()
+        if text == GPUType.AUTOMATIC:
+            return GPUType.NVIDIA
+        else:
+            return text
+
+    def set(self, type):
+        lst = list(GPUType)
+        for i, o in enumerate(lst):
+            if type == o:
+                self.setCurrentIndex(i)

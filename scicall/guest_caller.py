@@ -208,19 +208,28 @@ class GuestCaller(QWidget):
         video_device = self.input_device(MediaType.VIDEO).to_pipeline_string()
         audio_device = self.input_device(MediaType.AUDIO).to_pipeline_string()
 
+        #codertype = "nvidia"
+        #if codertype == "cpu":
+        #    videocoder = "x264enc tune=zerolatency" 
+        #elif codertype == "nvidia":
+        #    videocoder = "nvh264enc"
+        #videocoder = "vaapih264enc"
+        videocoder = "x264enc tune=zerolatency"
+        
         vstublocation = "c:/users/asus/test.png"
         srtport = channel_mpeg_stream_port(self.channelno())
         srtlatency = 80
         srthost = self.station_ip.text()
-        self.common_pipeline = Gst.parse_launch(
-            f"""mpegtsmux name=m ! queue name=q0 
+        pipeline_string = f"""mpegtsmux name=m ! queue name=q0 
                 ! srtsink uri=srt://{srthost}:{srtport} name=srtout wait-for-connection=true latency={srtlatency} sync=false async=true
-                {video_device} name=cam ! videoscale name=vconv ! videoconvert ! video/x-raw,width=640,height=480,framerate=30/1 ! compositor name=videocompositor ! queue name=l0 ! tee name=t1 ! queue name=qt0 ! videoconvert ! x264enc tune=zerolatency ! queue name=q1 ! m. 
+                {video_device} name=cam ! videoscale name=vconv ! videoconvert ! video/x-raw,width=640,height=480,framerate=30/1 ! compositor name=videocompositor ! queue name=l0 ! tee name=t1 ! queue name=qt0 ! videoconvert ! {videocoder} ! queue name=q1 ! m. 
                 {audio_device} name=mic ! audioconvert name=aconv ! queue name=l1 ! tee name=t2 ! queue name=qt1 ! audioconvert ! opusenc ! queue name=q2 ! m.
                 t1. ! queue name=qt2 ! videoconvert ! autovideosink sync=false name=videoend
                 t2. ! queue name=qt3 ! audioconvert ! spectrascope ! videoconvert ! autovideosink sync=false name=audioend
                 videotestsrc pattern=snow ! textoverlay text="Нет изображения" valignment=center halignment=center font-desc="Sans, 72" ! videoscale ! video/x-raw,width=640,height=480 ! videocompositor.
-             """)
+             """
+        print (pipeline_string)
+        self.common_pipeline = Gst.parse_launch(pipeline_string)
 
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
             "q0", "q1", "q2", "qt0", "qt1", "qt2", "qt3", "l1", "l0"
@@ -299,13 +308,15 @@ class GuestCaller(QWidget):
 
     def enable_disable_video_input(self):
         if self.viden is True:
-            self.videosrc.set_state(Gst.State.NULL)
+            self.videosrc.set_state(Gst.State.NULL)           
+            self.fakevideosrc.set_state(Gst.State.PLAYING)
             self.viden = False  
             self.vcompose_sink_0.set_property("alpha", 0)       
             self.vcompose_sink_1.set_property("alpha", 1)
             
         else:
             self.videosrc.set_state(Gst.State.PLAYING)            
+            self.fakevideosrc.set_state(Gst.State.NULL)            
             self.vcompose_sink_0.set_property("alpha", 1)       
             self.vcompose_sink_1.set_property("alpha", 0)  
             self.viden = True

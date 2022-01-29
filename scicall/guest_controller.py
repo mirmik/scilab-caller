@@ -136,9 +136,10 @@ class ConnectionController(QWidget):
 
     def client_ready_read(self):
         client = self.clients[0]
-        rawdata = client.readLineData(1024).decode("utf-8")
-        data = json.loads(rawdata)
-        self.new_opposite_command(data)
+        while client.bytesAvailable():
+            rawdata = client.readLineData(1024).decode("utf-8")
+            data = json.loads(rawdata)
+            self.new_opposite_command(data)
 
     def new_opposite_command(self, data):
         print("GUEST >>", data)
@@ -146,13 +147,19 @@ class ConnectionController(QWidget):
         
         if cmd == "hello_from_guest":
             self.send_to_opposite({"cmd": "start_common_stream"})
-            self.start_streams()
+            self.start_common_stream()
+
+            time.sleep(0.2)
+
+            self.send_to_opposite({"cmd": "start_feedback_stream"})
+            self.start_feedback_stream()
         else:
             print("unresolved command")        
 
     def send_to_opposite(self, dct):
         client = self.clients[0]
-        self.write_socket_data.emit(client, json.dumps(dct).encode("utf-8"))
+        client.writeData((json.dumps(dct) + "\n").encode("utf-8"))
+        client.flush()
 
     def stop_control_server(self):
         for c in self.clients:
@@ -253,7 +260,7 @@ class ConnectionController(QWidget):
         
             t2. ! queue name=qt1 !audioconvert ! spectrascope ! videoconvert ! 
                 autovideosink sync=false name=audioend
-            t2. ! queue name=qt3 !audioconvert ! opusenc ! udpsink host=127.0.0.1 port={udpspam} sync=false
+            t2. ! queue name=qt3 !audioconvert ! {audiocaps} ! opusenc ! udpsink host=127.0.0.1 port={udpspam} sync=false
         """)
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
             "q0", "q2", "qt0", "qt1", "qt2", "qt3"
@@ -297,19 +304,20 @@ class ConnectionController(QWidget):
         udpaudiomix = ""
         for i in self.sound_feedback_list():
             udpaudiomix = udpaudiomix + f"""udpsrc port={internal_channel_udpspam_port(i)} reuse=true ! opusparse ! 
-                opusdec ! audioconvert ! queue name=uq{i} ! amixer. \n"""
+                opusdec ! audioconvert ! audioresample ! {audiocaps} ! queue name=uq{i} ! amixer. \n"""
 
         pstr = f"""
-            videotestsrc pattern=snow ! videoconvert ! {videocaps} ! queue name=q0 ! tee name=videotee ! queue name=q2 ! 
+            videotestsrc pattern=snow ! videoconvert ! videoscale ! {videocaps} ! queue name=q0 ! tee name=videotee ! queue name=q2 ! 
                 autovideosink name=fbvideoend sync=false
 
             videotee. ! {videocoder} ! {h264caps}
                 ! srtsink uri=srt://:{srtport} latency={srtlatency} sync=false
 
-            audiomixer name=amixer ! tee name=audiotee ! queue name=q1 ! audioconvert ! {audiocaps} ! opusenc
-                ! srtsink uri=srt://:{srtport+1} latency={srtlatency} sync=false                
+            audiomixer name=amixer ! tee name=audiotee ! queue name=q1 ! audioconvert ! audioresample ! 
+                {audiocaps} ! opusenc
+                    ! srtsink uri=srt://:{srtport+1} latency={srtlatency} sync=false                
 
-            audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! 
+            audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! 
                 videoconvert ! autovideosink name=fbaudioend sync=false
 
             {udpaudiomix}

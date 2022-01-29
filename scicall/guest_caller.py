@@ -29,6 +29,7 @@ class GuestCaller(QWidget):
     """ Пользовательский виджет реализует удалённой станции. """
 
     def __init__(self):
+        self.IMMITATION_FLAG=False
         self.VIDEO_DISABLE_TEXT = "Камера(отключить)"
         self.VIDEO_ENABLE_TEXT = "Камера(включить)"
         self.AUDIO_DISABLE_TEXT = "Микрофон(отключить)"
@@ -82,9 +83,13 @@ class GuestCaller(QWidget):
         self.fb_volume_slider.sliderMoved.connect(self.fb_volume_action)
 
         self.gpuchecker = pipeline_utils.GPUChecker()
+        self.imitation_label_text = "Запуск без установки соединения"
+        self.stop_immitation_label_text = "Остановить"
         self.connect_label_text = "Установить соединение"
         self.disconnect_label_text = "Разорвать соединение"
         self.connect_button = QPushButton(self.connect_label_text)
+
+        self.immitation_button = QPushButton(self.imitation_label_text)
 
         self.main_layout = QHBoxLayout()
         self.left_layout = QVBoxLayout()
@@ -113,6 +118,7 @@ class GuestCaller(QWidget):
         self.control_layout.addWidget(self.audio_source, 3, 1)
         self.control_layout.addWidget(self.gpuchecker, 4, 1)
         self.control_layout.addWidget(self.connect_button, 5, 0, 1, 2)
+        self.control_layout.addWidget(self.immitation_button, 6, 0, 1, 2)
 
         self.avpanel_layout.addWidget(self.video_enable_button)
         self.avpanel_layout.addWidget(self.audio_enable_button)
@@ -146,6 +152,7 @@ class GuestCaller(QWidget):
         self.client.disconnected.connect(self.on_client_disconnect)
         self.client.readyRead.connect(self.client_ready_read)
         self.connect_button.clicked.connect(self.connect_action)
+        self.immitation_button.clicked.connect(self.immitation_action)
 
         self.common_pipeline = None
         self.feedback_pipeline = None
@@ -177,9 +184,10 @@ class GuestCaller(QWidget):
 
 
     def client_ready_read(self):
-        rawdata = self.client.readLineData(1024).decode("utf-8")
-        data = json.loads(rawdata)
-        self.new_opposite_command(data)
+        while self.client.bytesAvailable():
+            rawdata = self.client.readLineData(1024).decode("utf-8")
+            data = json.loads(rawdata)
+            self.new_opposite_command(data)
 
     def new_opposite_command(self, data):
         print("STATION >>", data)
@@ -188,8 +196,13 @@ class GuestCaller(QWidget):
         if cmd == "hello_from_server":
             self.send_to_opposite({"cmd": "hello_from_guest"})
         elif cmd == "start_common_stream":
+            print("START_COMMON_STREAM")
             time.sleep(0.2)
-            self.start_streams()
+            self.start_common_stream()
+        elif cmd == "start_feedback_stream":
+            print("START_FEEDBACK_STREAM")
+            time.sleep(0.2)
+            self.start_feedback_stream()
         else:
             print("unresolved command")        
 
@@ -211,6 +224,10 @@ class GuestCaller(QWidget):
             msgBox = QMessageBox()
             msgBox.setText("Не удалось установить соединение с сервером.")
             msgBox.exec()
+
+    def immitation_action(self):
+        self.IMMITATION_FLAG=True
+        self.start_common_stream()
 
     def video_device(self):
         return self.videos[self.video_source.currentIndex()]
@@ -252,15 +269,23 @@ class GuestCaller(QWidget):
         videocaps = pipeline_utils.global_videocaps()
         videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
         srtport = channel_mpeg_stream_port(self.channelno())
+        srthost = self.station_ip.text()
         srtlatency = 80
+
+        videoout = f"srtsink uri=srt://{srthost}:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
+        audioout = f"srtsink uri=srt://{srthost}:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
+
+        if self.IMMITATION_FLAG:
+            videoout = "fakesink"
+            audioout = "fakesink"
+
         audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
         h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
-        srthost = self.station_ip.text()
         pipeline_string = f"""
             {video_device} name=cam ! videoscale ! videoconvert ! 
                 {videocaps} ! videocompositor. 
             videotestsrc pattern=snow name=fakevideosrc ! textoverlay text="Нет изображения" 
-                valignment=center halignment=center font-desc="Sans, 72" ! videoscale ! 
+                valignment=center halignment=center font-desc="Sans, 72" ! videoconvert ! videoscale ! 
                     {videocaps} ! videocompositor.
             compositor name=videocompositor ! tee name=videotee
 
@@ -270,16 +295,14 @@ class GuestCaller(QWidget):
             videotee. ! queue name=q0 ! videoconvert ! {videocoder} ! 
                 {h264caps} ! 
                      queue name=q4 ! 
-            srtsink uri=srt://{srthost}:{srtport} 
-                wait-for-connection=true latency={srtlatency} sync=false
+            {videoout}
             
             videotee. ! queue name=q1 !videoconvert ! autovideosink name=videoend
                         
             audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! videoconvert ! 
                 autovideosink name=audioend
             audiotee. ! queue name=q2 ! audioconvert ! audioresample ! {audiocaps} ! opusenc ! 
-            srtsink uri=srt://{srthost}:{srtport+1} 
-                wait-for-connection=true latency={srtlatency} sync=false
+            {audioout}
             """
         print (pipeline_string)
         self.common_pipeline = Gst.parse_launch(pipeline_string)
@@ -317,6 +340,7 @@ class GuestCaller(QWidget):
         self.viden = True
         self.auden = True
         self.feed_auden = True
+        self.volume_action()
 
     def start_feedback_stream(self):
 
@@ -329,20 +353,22 @@ class GuestCaller(QWidget):
         self.feedback_pipeline = Gst.parse_launch(f"""
             srtsrc uri=srt://{srthost}:{srtport} latency={srtlatency}
                  ! h264parse ! {videodecoder} ! videoconvert ! tee name=videotee 
+            videotee. ! queue name=q0 ! autovideosink name=fbvideoend sync=false
+
             srtsrc uri=srt://{srthost}:{srtport+1} latency={srtlatency} ! 
                 opusparse ! opusdec ! {audiocaps} ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
                     ! tee name=audiotee
-            
-            videotee. ! autovideosink name=fbvideoend sync=false
-            audiotee. ! queue name=q2 ! audioconvert ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
-            audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! 
+            audiotee. ! queue name=q2 ! audioconvert ! audioresample ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
+            audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! 
                 videoconvert ! autovideosink name=fbaudioend sync=false
         """)
 
         qs = [ self.feedback_pipeline.get_by_name(qname) for qname in [
-            "q2", "q3"
+            "q2", "q3", "q0"
         ]]
         for q in qs:
+            if q is None:
+                continue
             q.set_property("max-size-bytes", 100000) 
             q.set_property("max-size-buffers", 0) 
                 
@@ -352,7 +378,9 @@ class GuestCaller(QWidget):
         self.fbbus.connect('sync-message::element', self.on_sync_message)
         #self.fbbus.connect('message::error', self.on_error_message)
         #self.fbbus.connect("message::eos", self.eos_handle)
-        self.feedback_pipeline.set_state(Gst.State.PLAYING)
+        self.feedback_pipeline.set_state(Gst.State.PLAYING)        
+        self.fb_volume_action()
+
 
     def on_sync_message(self, bus, msg):
         """Биндим контрольное изображение к переданному снаружи виджету."""
@@ -421,8 +449,6 @@ class GuestCaller(QWidget):
         time.sleep(0.2)
         self.start_feedback_stream()
         time.sleep(0.2)
-        self.volume_action()
-        self.fb_volume_action()
 
     def stop_streams(self):
         self.stop_common_stream()

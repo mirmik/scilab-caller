@@ -225,7 +225,7 @@ class GuestCaller(QWidget):
 
     def remote_restart(self):
         self.connect_action()
-        QTimer.singleShot(2000, self.connect_action)
+        QTimer.singleShot(3000, self.connect_action)
 
     def send_to_opposite(self, dct):
         self.client.writeData(json.dumps(dct).encode("utf-8"))

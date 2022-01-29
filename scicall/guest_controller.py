@@ -37,6 +37,7 @@ class ConnectionController(QWidget):
 
     def __init__(self, number, zone):
         super().__init__()
+        self.SRTLATENCY = 125
         self.zone = zone
         self.flow_runned = False
         self.audio_feedback_checkboxes = []
@@ -146,6 +147,9 @@ class ConnectionController(QWidget):
         cmd = data["cmd"]
         
         if cmd == "hello_from_guest":
+            self.send_to_opposite({"cmd": "set_srtlatency", "data": self.SRTLATENCY})
+            time.sleep(0.2)
+
             self.send_to_opposite({"cmd": "start_common_stream"})
             self.start_common_stream()
 
@@ -243,7 +247,7 @@ class ConnectionController(QWidget):
     def start_common_stream(self):
         videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
         srtport = channel_mpeg_stream_port(self.channelno)
-        srtlatency = 80
+        srtlatency = self.SRTLATENCY
 
         audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
         udpspam = internal_channel_udpspam_port(self.channelno)
@@ -294,7 +298,7 @@ class ConnectionController(QWidget):
 
     def start_feedback_stream(self):
         srtport = channel_feedback_mpeg_stream_port(self.channelno)
-        srtlatency = 80
+        srtlatency = self.SRTLATENCY
 
         h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
         videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
@@ -307,7 +311,7 @@ class ConnectionController(QWidget):
                 opusdec ! audioconvert ! audioresample ! {audiocaps} ! queue name=uq{i} ! amixer. \n"""
 
         pstr = f"""
-            videotestsrc pattern=snow ! videoconvert ! videoscale ! {videocaps} ! queue name=q0 ! tee name=videotee ! queue name=q2 ! 
+            videotestsrc ! {videocaps} ! videoconvert ! videoscale ! queue name=q0 ! tee name=videotee ! queue name=q2 ! 
                 autovideosink name=fbvideoend sync=false
 
             videotee. ! {videocoder} ! {h264caps}

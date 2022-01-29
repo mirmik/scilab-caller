@@ -203,6 +203,8 @@ class GuestCaller(QWidget):
             print("START_FEEDBACK_STREAM")
             time.sleep(0.2)
             self.start_feedback_stream()
+        elif cmd == "set_srtlatency":
+            self.SRTLATENCY = data["data"] 
         else:
             print("unresolved command")        
 
@@ -270,7 +272,7 @@ class GuestCaller(QWidget):
         videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
         srtport = channel_mpeg_stream_port(self.channelno())
         srthost = self.station_ip.text()
-        srtlatency = 80
+        srtlatency = self.SRTLATENCY
 
         videoout = f"srtsink uri=srt://{srthost}:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
         audioout = f"srtsink uri=srt://{srthost}:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
@@ -347,7 +349,7 @@ class GuestCaller(QWidget):
         videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
 
         srtport = channel_feedback_mpeg_stream_port(self.channelno())
-        srtlatency = 80
+        srtlatency = self.SRTLATENCY
         audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
         srthost = self.station_ip.text()
         self.feedback_pipeline = Gst.parse_launch(f"""

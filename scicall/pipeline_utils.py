@@ -284,5 +284,5 @@ class GPUChecker(QComboBox):
 
 
 def global_videocaps():
-    return "video/x-raw"
-    #return "video/x-raw,width=640,height=480,framerate=30/1"
+    #return "video/x-raw"
+    return "video/x-raw,width=640,height=480,framerate=30/1"

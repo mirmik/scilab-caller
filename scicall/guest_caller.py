@@ -214,14 +214,24 @@ class GuestCaller(QWidget):
             self.start_feedback_stream()
         elif cmd == "set_srtlatency":
             self.SRTLATENCY = data["data"] 
+        elif cmd == "client_collision":
+            msgBox = QMessageBox()
+            msgBox.setText("Кажется, этот канал кем-то занят. Попробуйте другой канал.")
+            msgBox.exec()         
+        elif cmd == "remote_restart":
+            self.remote_restart()
         else:
             print("unresolved command")        
+
+    def remote_restart(self):
+        self.connect_action()
+        QTimer.singleShot(2000, self.connect_action)
 
     def send_to_opposite(self, dct):
         self.client.writeData(json.dumps(dct).encode("utf-8"))
 
     def connect_action(self):
-        if self.client.state() == QTcpSocket.ConnectedState:
+        if self.client.state() == QTcpSocket.ConnectedState or self.common_pipeline:
             self.client.disconnectFromHost()
             self.stop_streams()
             return 
@@ -233,10 +243,14 @@ class GuestCaller(QWidget):
             print("success")
         else:            
             msgBox = QMessageBox()
-            msgBox.setText("Не удалось установить соединение с сервером.")
+            msgBox.setText("Не удалось установить соединение с сервером. \nСервер недоступен, или запрошенный канал неактивен.")
             msgBox.exec()
 
     def immitation_action(self):
+        if self.common_pipeline:
+            self.stop_streams()
+            return
+
         self.IMMITATION_FLAG=True
         self.start_common_stream()
         self.start_feedback_stream()
@@ -381,7 +395,7 @@ class GuestCaller(QWidget):
         if not self.cb_feedback.isChecked():
             videopart = f"srtsrc {srtin0uri} latency={srtlatency} ! fakesink"
 
-        videopart = ""
+        #videopart = ""
 
         if self.cb_specter.isChecked():
             spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! videoconvert ! autovideosink name=fbaudioend sync=false"

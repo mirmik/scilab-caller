@@ -310,12 +310,18 @@ class ConnectionController(QWidget):
             udpaudiomix = udpaudiomix + f"""udpsrc port={internal_channel_udpspam_port(i)} reuse=true ! opusparse ! 
                 opusdec ! audioconvert ! audioresample ! {audiocaps} ! queue name=uq{i} ! amixer. \n"""
 
-        pstr = f"""
+        videopart = f"""
             videotestsrc ! {videocaps} ! videoconvert ! videoscale ! queue name=q0 ! tee name=videotee ! queue name=q2 ! 
                 autovideosink name=fbvideoend sync=false
 
             videotee. ! {videocoder} ! {h264caps}
                 ! srtsink uri=srt://:{srtport} latency={srtlatency} sync=false
+
+        """
+        #videopart=""
+
+        pstr = f"""
+            {videopart}
 
             audiomixer name=amixer ! tee name=audiotee ! queue name=q1 ! audioconvert ! audioresample ! 
                 {audiocaps} ! opusenc
@@ -333,8 +339,9 @@ class ConnectionController(QWidget):
         qs = [ "q0", "q1", "q2", "q3" ] + [f"uq{i}" for i in self.sound_feedback_list()]
         print(qs)
         qs = [ self.feedback_pipeline.get_by_name(qname) for qname in qs ]
-        print(qs)
         for q in qs:
+            if q is None:
+                continue
             q.set_property("max-size-bytes", 100000) 
             q.set_property("max-size-buffers", 0) 
                 

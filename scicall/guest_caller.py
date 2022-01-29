@@ -30,6 +30,7 @@ class GuestCaller(QWidget):
 
     def __init__(self):
         self.IMMITATION_FLAG=False
+        self.SRTLATENCY=80
         self.VIDEO_DISABLE_TEXT = "Камера(отключить)"
         self.VIDEO_ENABLE_TEXT = "Камера(включить)"
         self.AUDIO_DISABLE_TEXT = "Микрофон(отключить)"
@@ -230,6 +231,7 @@ class GuestCaller(QWidget):
     def immitation_action(self):
         self.IMMITATION_FLAG=True
         self.start_common_stream()
+        self.start_feedback_stream()
 
     def video_device(self):
         return self.videos[self.video_source.currentIndex()]
@@ -278,8 +280,8 @@ class GuestCaller(QWidget):
         audioout = f"srtsink uri=srt://{srthost}:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
 
         if self.IMMITATION_FLAG:
-            videoout = "fakesink"
-            audioout = "fakesink"
+            videoout = f"srtsink uri=srt://127.0.0.1:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
+            audioout = f"srtsink uri=srt://127.0.0.1:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
 
         audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
         h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
@@ -348,16 +350,30 @@ class GuestCaller(QWidget):
 
         videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
 
+        srthost = self.station_ip.text()
         srtport = channel_feedback_mpeg_stream_port(self.channelno())
+        srtin0uri = f"uri=srt://{srthost}:{srtport}"
+        srtin1uri = f"uri=srt://{srthost}:{srtport+1}"
+        if self.IMMITATION_FLAG:
+            srtport = channel_mpeg_stream_port(self.channelno())
+            srtin0uri = f"uri=srt://:{srtport}"
+            srtin1uri = f"uri=srt://:{srtport+1}"
+        
+
         srtlatency = self.SRTLATENCY
         audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
-        srthost = self.station_ip.text()
-        self.feedback_pipeline = Gst.parse_launch(f"""
-            srtsrc uri=srt://{srthost}:{srtport} latency={srtlatency}
+        
+        videopart = f"""
+            srtsrc {srtin0uri} latency={srtlatency}
                  ! h264parse ! {videodecoder} ! videoconvert ! tee name=videotee 
             videotee. ! queue name=q0 ! autovideosink name=fbvideoend sync=false
+        """
+        #videopart = ""
 
-            srtsrc uri=srt://{srthost}:{srtport+1} latency={srtlatency} ! 
+        self.feedback_pipeline = Gst.parse_launch(f"""
+            {videopart}
+
+            srtsrc {srtin1uri} latency={srtlatency} ! 
                 opusparse ! opusdec ! {audiocaps} ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
                     ! tee name=audiotee
             audiotee. ! queue name=q2 ! audioconvert ! audioresample ! autoaudiosink sync=false ts-offset=-2000000000 name=asink

@@ -237,14 +237,16 @@ class ConnectionController(QWidget):
         videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
         srtport = channel_mpeg_stream_port(self.channelno)
         srtlatency = 80
+
+        audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
         udpspam = internal_channel_udpspam_port(self.channelno)
         self.common_pipeline = Gst.parse_launch(
             f"""srtsrc uri=srt://:{srtport} wait-for-connection=true latency={srtlatency} 
                     ! queue name=q0 ! h264parse ! {videodecoder} ! tee name=t1 
 
             srtsrc uri=srt://:{srtport+1} wait-for-connection=true latency={srtlatency} ! 
-            queue name=q2 ! opusparse ! opusdec ! audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1
- ! audioconvert ! audioresample !  tee name=t2 
+            queue name=q2 ! opusparse ! opusdec ! {audiocaps}
+             ! audioconvert ! audioresample !  tee name=t2 
             
             t1. ! queue name=qt0 ! videoconvert ! autovideosink sync=false name=videoend
             t1. ! queue name=qt2 ! appsink name=appsink
@@ -287,7 +289,10 @@ class ConnectionController(QWidget):
         srtport = channel_feedback_mpeg_stream_port(self.channelno)
         srtlatency = 80
 
+        h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
         videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
+        audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
+        videocaps = pipeline_utils.global_videocaps()
 
         udpaudiomix = ""
         for i in self.sound_feedback_list():
@@ -295,14 +300,15 @@ class ConnectionController(QWidget):
                 opusdec ! audioconvert ! queue name=uq{i} ! amixer. \n"""
 
         pstr = f"""
-            videotestsrc pattern=snow ! videoconvert ! queue name=q0 ! tee name=videotee ! queue name=q2 ! 
+            videotestsrc pattern=snow ! videoconvert ! {videocaps} ! queue name=q0 ! tee name=videotee ! queue name=q2 ! 
                 autovideosink name=fbvideoend sync=false
 
-            videotee. ! {videocoder} ! 
-                video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1 !
-            mpegtsmux name=m ! srtsink uri=srt://:{srtport} latency={srtlatency} sync=false
+            videotee. ! {videocoder} ! {h264caps}
+                ! srtsink uri=srt://:{srtport} latency={srtlatency} sync=false
 
-            audiomixer name=amixer ! tee name=audiotee ! queue name=q1 ! audioconvert ! opusenc ! m.
+            audiomixer name=amixer ! tee name=audiotee ! queue name=q1 ! audioconvert ! {audiocaps} ! opusenc
+                ! srtsink uri=srt://:{srtport+1} latency={srtlatency} sync=false                
+
             audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! 
                 videoconvert ! autovideosink name=fbaudioend sync=false
 
@@ -395,7 +401,7 @@ class ConnectionController(QWidget):
     def start_streams(self):
         self.start_common_stream()
         time.sleep(0.2)
-        #self.start_feedback_stream()
+        self.start_feedback_stream()
         time.sleep(0.2)
 
     def stop_streams(self):

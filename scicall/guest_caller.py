@@ -249,23 +249,26 @@ class GuestCaller(QWidget):
         video_device = self.input_device(MediaType.VIDEO).to_pipeline_string()
         audio_device = self.input_device(MediaType.AUDIO).to_pipeline_string()
 
+        videocaps = pipeline_utils.global_videocaps()
         videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
         srtport = channel_mpeg_stream_port(self.channelno())
         srtlatency = 80
+        audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
+        h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
         srthost = self.station_ip.text()
         pipeline_string = f"""
             {video_device} name=cam ! videoscale ! videoconvert ! 
-                video/x-raw,width=640,height=480,framerate=30/1 ! videocompositor. 
+                {videocaps} ! videocompositor. 
             videotestsrc pattern=snow name=fakevideosrc ! textoverlay text="Нет изображения" 
                 valignment=center halignment=center font-desc="Sans, 72" ! videoscale ! 
-                    video/x-raw,width=640,height=480,framerate=30/1 ! videocompositor.
+                    {videocaps} ! videocompositor.
             compositor name=videocompositor ! tee name=videotee
 
             {audio_device} name=mic ! volume name=volume ! volume name=onoffvol 
                 ! tee name=audiotee 
 
             videotee. ! queue name=q0 ! videoconvert ! {videocoder} ! 
-                video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1 ! 
+                {h264caps} ! 
                      queue name=q4 ! 
             srtsink uri=srt://{srthost}:{srtport} 
                 wait-for-connection=true latency={srtlatency} sync=false
@@ -274,7 +277,7 @@ class GuestCaller(QWidget):
                         
             audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! videoconvert ! 
                 autovideosink name=audioend
-            audiotee. ! queue name=q2 ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1 ! opusenc ! 
+            audiotee. ! queue name=q2 ! audioconvert ! audioresample ! {audiocaps} ! opusenc ! 
             srtsink uri=srt://{srthost}:{srtport+1} 
                 wait-for-connection=true latency={srtlatency} sync=false
             """
@@ -321,12 +324,15 @@ class GuestCaller(QWidget):
 
         srtport = channel_feedback_mpeg_stream_port(self.channelno())
         srtlatency = 80
+        audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
         srthost = self.station_ip.text()
         self.feedback_pipeline = Gst.parse_launch(f"""
-            srtsrc uri=srt://{srthost}:{srtport} latency={srtlatency} ! tsdemux name=demux 
-            demux. ! h264parse ! {videodecoder} ! videoconvert ! tee name=videotee 
-            demux. ! opusparse ! opusdec ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
-                ! tee name=audiotee
+            srtsrc uri=srt://{srthost}:{srtport} latency={srtlatency}
+                 ! h264parse ! {videodecoder} ! videoconvert ! tee name=videotee 
+            srtsrc uri=srt://{srthost}:{srtport+1} latency={srtlatency} ! 
+                opusparse ! opusdec ! {audiocaps} ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
+                    ! tee name=audiotee
+            
             videotee. ! autovideosink name=fbvideoend sync=false
             audiotee. ! queue name=q2 ! audioconvert ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
             audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! 
@@ -413,7 +419,7 @@ class GuestCaller(QWidget):
     def start_streams(self):
         self.start_common_stream()
         time.sleep(0.2)
-        #self.start_feedback_stream()
+        self.start_feedback_stream()
         time.sleep(0.2)
         self.volume_action()
         self.fb_volume_action()

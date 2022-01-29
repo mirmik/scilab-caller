@@ -281,3 +281,7 @@ class GPUChecker(QComboBox):
         for i, o in enumerate(lst):
             if type == o:
                 self.setCurrentIndex(i)
+
+
+def global_videocaps():
+    return "video/x-raw,width=640,height=480,framerate=30/1"

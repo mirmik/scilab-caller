@@ -320,7 +320,6 @@ class GuestCaller(QWidget):
             audiotee. ! queue name=q2 ! audioconvert ! audioresample ! {audiocaps} ! opusenc ! 
             {audioout}
             """
-        print (pipeline_string)
         self.common_pipeline = Gst.parse_launch(pipeline_string)
 
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
@@ -350,7 +349,6 @@ class GuestCaller(QWidget):
         self.vcompose_sink_0 = self.vcompose.get_static_pad("sink_0")
         self.vcompose_sink_1 = self.vcompose.get_static_pad("sink_1")       
         self.vcompose_sink_1.set_property("alpha", 0)
-        print(self.vcompose_sink_0)
 
         self.viden = True
         self.auden = True

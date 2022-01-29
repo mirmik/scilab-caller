@@ -289,7 +289,7 @@ def global_videocaps():
 
 def audiocaps():
     #return "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
-    return "audio/x-raw,format=S16LE,layout=interleaved,rate=12000,channels=1"
+    return "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
 
 def queue_size():
     return 100000

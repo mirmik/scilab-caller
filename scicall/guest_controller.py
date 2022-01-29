@@ -37,6 +37,7 @@ class ConnectionController(QWidget):
 
     def __init__(self, number, zone):
         super().__init__()
+        self.audio_appsrcs = []
         self.zone = zone
         self.flow_runned = False
         self.audio_feedback_checkboxes = []
@@ -100,6 +101,7 @@ class ConnectionController(QWidget):
         self.common_pipeline=None
         self.feedback_pipeline=None
         self.sample_controller=None
+        self.feedback_pipeline_started = False
 
     def get_srt_latency(self):
         return int(self.srtlatency_edit.text())
@@ -258,6 +260,35 @@ class ConnectionController(QWidget):
     def get_gpu_type(self):
         return self.zone.get_gpu_type()
 
+    #def soundmixout_new_preroll(self, arg0, arg1):
+    #    sample = self.soundmixout.emit("pull-preroll")
+    #    if self.soundmixin and  self.feedback_pipeline:
+    #        print("PREROLL", sample)
+    #        ret = self.soundmixin.emit ("push-buffer", sample)
+    #    return Gst.FlowReturn.OK
+
+    def soundmixout_new_buffer(self, arg0, arg1):
+        sample = self.soundmixout.emit("pull-sample")
+        #for appsrc in audio_appsrcs:
+        #    appsrc.emit("push-sample", sample)
+        self.zone.push_sample(sample, self.channelno)
+        return Gst.FlowReturn.OK
+
+    def push_sample(self, sample, no):
+        if self.feedback_pipeline_started and no in self.sound_feedback_list():
+            el = self.feedback_pipeline.get_by_name(f"soundmixin{no}")
+            #print(dir(sample))
+            #print(sample)
+            #print(sample.get_info())
+            #print(sample.get_buffer())
+            #print(dir(sample.get_buffer()))
+            #print(sample.get_buffer().get_reference_timestamp_meta())
+            buf = sample.get_buffer()
+            buf.pts = Gst.CLOCK_TIME_NONE 
+            buf.dts = Gst.CLOCK_TIME_NONE 
+            buf.duration = Gst.CLOCK_TIME_NONE
+            el.emit("push-sample", sample)
+
     def start_common_stream(self):
         videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
         srtport = channel_mpeg_stream_port(self.channelno)
@@ -278,7 +309,7 @@ class ConnectionController(QWidget):
         
             t2. ! queue name=qt1 !audioconvert ! spectrascope ! videoconvert ! 
                 autovideosink sync=false name=audioend
-            t2. ! queue name=qt3 !audioconvert ! {audiocaps} ! opusenc ! udpsink host=127.0.0.1 port={udpspam} buffer-size={pipeline_utils.udpbuffer_size()} sync=false
+            t2. ! queue name=qt3 !audioconvert ! {audiocaps} ! opusenc ! appsink emit-signals=True name=soundmixout
         """)
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
             "q0", "q2", "qt0", "qt1", "qt2", "qt3"
@@ -293,6 +324,16 @@ class ConnectionController(QWidget):
         appsink.set_property("drop", True)
         appsink.set_property("emit-signals", True)
         appsink.connect("new-sample", self.new_sample, None)
+
+        soundmixout = self.common_pipeline.get_by_name("soundmixout")
+        soundmixout.set_property("sync", False)
+        soundmixout.set_property("emit-signals", True)
+        soundmixout.set_property("max-buffers", 1)
+        soundmixout.set_property("drop", True)
+        soundmixout.set_property("emit-signals", True)
+        #soundmixout.connect("new-preroll", self.soundmixout_new_preroll, None)
+        soundmixout.connect("new-sample", self.soundmixout_new_buffer, None)
+        self.soundmixout = soundmixout
 
         self.last_sample = time.time()
         self.flow_runned = False
@@ -318,10 +359,12 @@ class ConnectionController(QWidget):
         audiocaps = pipeline_utils.audiocaps()
         videocaps = pipeline_utils.global_videocaps()
 
-        udpaudiomix = ""
+        appaudiomix = ""
         for i in self.sound_feedback_list():
-            udpaudiomix = udpaudiomix + f"""udpsrc port={internal_channel_udpspam_port(i)} reuse=true ! opusparse ! 
-                opusdec ! {audiocaps} ! queue name=quu{i} ! audioconvert ! audioresample ! queue name=uq{i} ! amixer. 
+            appaudiomix = appaudiomix + f"""
+            appsrc name=soundmixin{i} emit-signals=True max-bytes=10000 is-live=true do-timestamp=true caps={audiocaps} 
+                ! opusparse ! opusdec ! {audiocaps} ! queue name=quu{i} ! audioconvert ! audioresample 
+                ! queue name=uq{i} ! amixer. 
             \n"""
 
         videopart = f"""
@@ -337,15 +380,29 @@ class ConnectionController(QWidget):
         pstr = f"""
             {videopart}
 
-            audiomixer name=amixer ! queue name=qq ! tee name=audiotee ! queue name=q1 ! audioconvert ! audioresample ! 
-                {audiocaps} ! opusenc
-                    ! srtsink uri=srt://:{srtport+1} latency={srtlatency} sync=false                
+            liveadder latency=0 name=amixer ! audioresample ! audioconvert ! tee name=audiotee
 
             audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! 
-                videoconvert ! autovideosink name=fbaudioend sync=false
+                videoconvert ! autovideosink name=fbaudioend sync=false            
 
-            {udpaudiomix}
+            audiotee. ! queue name=q1 ! audioconvert ! audioresample ! {audiocaps} ! opusenc
+                    ! srtsink uri=srt://:{srtport+1} latency={srtlatency} sync=false
+
+
+            {appaudiomix}
         """
+        """audioconvert
+             ! {audiocaps} ! queue name=qq ! tee name=audiotee
+
+            audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! 
+                videoconvert ! autovideosink name=fbaudioend sync=false"""
+
+        """              ! queue name=q1 ! audioconvert ! audioresample ! 
+                {audiocaps} ! opusenc
+                    ! srtsink uri=srt://:{srtport+1} latency={srtlatency} sync=false                
+"""
+
+
         print(pstr)
 
         self.feedback_pipeline = Gst.parse_launch(pstr)
@@ -354,8 +411,8 @@ class ConnectionController(QWidget):
         print(qs)
         qs = [ self.feedback_pipeline.get_by_name(qname) for qname in qs ]
         for q in qs:
-            pipeline_utils.setup_queuee(q)
-                
+            pipeline_utils.setup_queuee(q)     
+
         self.fbbus = self.feedback_pipeline.get_bus()
         self.fbbus.add_signal_watch()
         self.fbbus.enable_sync_message_emission()
@@ -363,6 +420,7 @@ class ConnectionController(QWidget):
         self.fbbus.connect('message::error', self.on_error_message)
         self.fbbus.connect("message::eos", self.eos_handle)
         self.feedback_pipeline.set_state(Gst.State.PLAYING)
+        self.feedback_pipeline_started = True
 
     def new_sample(self, a, b):
         self.last_sample = time.time()
@@ -395,6 +453,7 @@ class ConnectionController(QWidget):
             self.sample_controller = None
 
     def stop_feedback_stream(self):
+        self.feedback_pipeline_started = False
         if self.feedback_pipeline:
             self.feedback_pipeline.set_state(Gst.State.NULL)
         time.sleep(0.1)
@@ -464,3 +523,7 @@ class ConnectionControllerZone(QWidget):
         wdg = ConnectionController(i, zone)
         self.zones.append(wdg)
         self.vlayout.addWidget(wdg)
+
+    def push_sample(self, sample, chno):
+        for z in self.zones:
+            z.push_sample(sample, chno)

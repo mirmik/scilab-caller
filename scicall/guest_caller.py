@@ -388,14 +388,18 @@ class GuestCaller(QWidget):
         else:
             spectrogramm = ""                 
 
-        self.feedback_pipeline = Gst.parse_launch(f"""
-            {videopart}
 
+        audiopart = f"""
             srtsrc {srtin1uri} latency={srtlatency} ! 
                 opusparse ! opusdec ! {audiocaps} ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
                     ! tee name=audiotee
             audiotee. ! queue name=q2 ! audioconvert ! audioresample ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
             {spectrogramm}
+        """
+
+        self.feedback_pipeline = Gst.parse_launch(f"""
+            {videopart}
+            {audiopart}
         """)
 
         qs = [ self.feedback_pipeline.get_by_name(qname) for qname in [

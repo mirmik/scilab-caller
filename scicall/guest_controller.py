@@ -37,7 +37,6 @@ class ConnectionController(QWidget):
 
     def __init__(self, number, zone):
         super().__init__()
-        self.SRTLATENCY = 125
         self.zone = zone
         self.flow_runned = False
         self.audio_feedback_checkboxes = []
@@ -56,6 +55,12 @@ class ConnectionController(QWidget):
         self.server.newConnection.connect(self.on_server_new_connect)
         self.listener = None
 
+        self.common_channel_cb = QCheckBox("Прямой канал:")
+        self.feedback_channel_cb = QCheckBox("Обратный канал:")
+        self.srtlatency_edit = QLineEdit("125")
+        self.common_channel_cb.setChecked(True)
+        self.feedback_channel_cb.setChecked(True)
+
         self.infowdg = QTextEdit()
         self.enable_disable_button = QPushButton("Включить")
         
@@ -66,6 +71,10 @@ class ConnectionController(QWidget):
         self.control_layout = QVBoxLayout()
         self.make_checkboxes_for_sound_feedback()
         self.control_layout.addWidget(self.enable_disable_button)
+        self.control_layout.addWidget(self.common_channel_cb)
+        self.control_layout.addWidget(self.feedback_channel_cb)             
+        self.control_layout.addWidget(QLabel("srt latency:"))   
+        self.control_layout.addWidget(self.srtlatency_edit)
 
         self.layout.addWidget(self.spectroscope)
         self.layout.addWidget(self.display)
@@ -91,6 +100,9 @@ class ConnectionController(QWidget):
         self.common_pipeline=None
         self.feedback_pipeline=None
         self.sample_controller=None
+
+    def get_srt_latency(self):
+        return int(self.srtlatency_edit.text())
 
     def make_checkboxes_for_sound_feedback(self):
         for i in range(3):
@@ -147,16 +159,18 @@ class ConnectionController(QWidget):
         cmd = data["cmd"]
         
         if cmd == "hello_from_guest":
-            self.send_to_opposite({"cmd": "set_srtlatency", "data": self.SRTLATENCY})
+            self.send_to_opposite({"cmd": "set_srtlatency", "data": self.get_srt_latency()})
             time.sleep(0.2)
 
-            self.send_to_opposite({"cmd": "start_common_stream"})
-            self.start_common_stream()
+            if self.common_channel_cb.isChecked():
+                self.send_to_opposite({"cmd": "start_common_stream"})
+                self.start_common_stream()
 
             time.sleep(0.2)
 
-            self.send_to_opposite({"cmd": "start_feedback_stream"})
-            self.start_feedback_stream()
+            if self.feedback_channel_cb.isChecked():
+                self.send_to_opposite({"cmd": "start_feedback_stream"})
+                self.start_feedback_stream()
         else:
             print("unresolved command")        
 
@@ -247,7 +261,7 @@ class ConnectionController(QWidget):
     def start_common_stream(self):
         videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
         srtport = channel_mpeg_stream_port(self.channelno)
-        srtlatency = self.SRTLATENCY
+        srtlatency = self.get_srt_latency()
 
         audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
         udpspam = internal_channel_udpspam_port(self.channelno)
@@ -298,7 +312,7 @@ class ConnectionController(QWidget):
 
     def start_feedback_stream(self):
         srtport = channel_feedback_mpeg_stream_port(self.channelno)
-        srtlatency = self.SRTLATENCY
+        srtlatency = self.get_srt_latency()
 
         h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
         videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())

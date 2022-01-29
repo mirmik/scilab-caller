@@ -286,7 +286,7 @@ class GuestCaller(QWidget):
         audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
         h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
         pipeline_string = f"""
-            {video_device} name=cam ! videoscale ! videoconvert ! 
+            {video_device} name=cam ! video/x-raw,width=640,framerate=30/1 ! videoscale ! videoconvert ! 
                 {videocaps} ! videocompositor. 
             videotestsrc pattern=snow name=fakevideosrc ! textoverlay text="Нет изображения" 
                 valignment=center halignment=center font-desc="Sans, 72" ! videoconvert ! videoscale ! 

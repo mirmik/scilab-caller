@@ -286,3 +286,31 @@ class GPUChecker(QComboBox):
 def global_videocaps():
     #return "video/x-raw"
     return "video/x-raw,width=640,height=480,framerate=30/1"
+
+def audiocaps():
+    #return "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
+    return "audio/x-raw,format=S16LE,layout=interleaved,rate=12000,channels=1"
+
+def queue_size():
+    return 100000
+
+def udpbuffer_size():
+    return 100000
+
+
+def max_size_bytes(): return 100000
+def max_size_buffers(): return 1
+def max_size_time(): return 0
+def max_threshold_bytes(): return 0
+def max_threshold_buffers(): return 0
+def max_threshold_time(): return 0
+
+def setup_queuee(q):
+    if q is None:
+        return
+    q.set_property("max-size-bytes", max_size_bytes()) 
+    q.set_property("max-size-buffers", max_size_buffers())
+    q.set_property("max-size-time", max_size_time())
+    q.set_property("min-threshold-bytes", max_threshold_bytes()) 
+    q.set_property("min-threshold-buffers", max_threshold_buffers())
+    q.set_property("min-threshold-time", max_threshold_time())

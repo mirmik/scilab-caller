@@ -263,7 +263,7 @@ class ConnectionController(QWidget):
         srtport = channel_mpeg_stream_port(self.channelno)
         srtlatency = self.get_srt_latency()
 
-        audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
+        audiocaps = pipeline_utils.audiocaps()
         udpspam = internal_channel_udpspam_port(self.channelno)
         self.common_pipeline = Gst.parse_launch(
             f"""srtsrc uri=srt://:{srtport} wait-for-connection=true latency={srtlatency} 
@@ -278,14 +278,13 @@ class ConnectionController(QWidget):
         
             t2. ! queue name=qt1 !audioconvert ! spectrascope ! videoconvert ! 
                 autovideosink sync=false name=audioend
-            t2. ! queue name=qt3 !audioconvert ! {audiocaps} ! opusenc ! udpsink host=127.0.0.1 port={udpspam} sync=false
+            t2. ! queue name=qt3 !audioconvert ! {audiocaps} ! opusenc ! udpsink host=127.0.0.1 port={udpspam} buffer-size={pipeline_utils.udpbuffer_size()} sync=false
         """)
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
             "q0", "q2", "qt0", "qt1", "qt2", "qt3"
         ]]
         for q in qs:
-            q.set_property("max-size-bytes", 100000) 
-            q.set_property("max-size-buffers", 0) 
+            pipeline_utils.setup_queuee(q)
 
         appsink = self.common_pipeline.get_by_name("appsink")
         appsink.set_property("sync", False)
@@ -316,13 +315,13 @@ class ConnectionController(QWidget):
 
         h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
         videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
-        audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
+        audiocaps = pipeline_utils.audiocaps()
         videocaps = pipeline_utils.global_videocaps()
 
         udpaudiomix = ""
         for i in self.sound_feedback_list():
             udpaudiomix = udpaudiomix + f"""udpsrc port={internal_channel_udpspam_port(i)} reuse=true ! opusparse ! 
-                opusdec ! audioconvert ! audioresample ! {audiocaps} ! queue name=uq{i} ! amixer. \n"""
+                opusdec ! {audiocaps} ! queue name=uq{i} ! amixer. \n"""
 
         videopart = f"""
             videotestsrc ! {videocaps} ! videoconvert ! videoscale ! queue name=q0 ! tee name=videotee ! queue name=q2 ! 
@@ -354,10 +353,7 @@ class ConnectionController(QWidget):
         print(qs)
         qs = [ self.feedback_pipeline.get_by_name(qname) for qname in qs ]
         for q in qs:
-            if q is None:
-                continue
-            q.set_property("max-size-bytes", 100000) 
-            q.set_property("max-size-buffers", 0) 
+            pipeline_utils.setup_queuee(q)
                 
         self.fbbus = self.feedback_pipeline.get_bus()
         self.fbbus.add_signal_watch()

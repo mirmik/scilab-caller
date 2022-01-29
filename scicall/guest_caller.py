@@ -83,6 +83,12 @@ class GuestCaller(QWidget):
         self.fb_volume_slider.setValue(1000)
         self.fb_volume_slider.sliderMoved.connect(self.fb_volume_action)
 
+        self.cb_feedback = QCheckBox("Принимать обратный видеоканал:")
+        self.cb_feedback.setChecked(True)
+
+        self.cb_specter = QCheckBox("Показывать спектрограммы:")
+        self.cb_specter.setChecked(True)
+
         self.gpuchecker = pipeline_utils.GPUChecker()
         self.imitation_label_text = "Запуск без установки соединения"
         self.stop_immitation_label_text = "Остановить"
@@ -112,14 +118,16 @@ class GuestCaller(QWidget):
         self.control_layout.addWidget(QLabel("Номер канала:"), 1, 0)
         self.control_layout.addWidget(QLabel("Источник видео:"), 2, 0)
         self.control_layout.addWidget(QLabel("Источник звука:"), 3, 0)
-        self.control_layout.addWidget(QLabel("Аппаратное ускорение:\n(поддерживаются карты\nnvidia)"), 4, 0)
+        self.control_layout.addWidget(self.cb_feedback, 4, 0, 1, 2)
+        self.control_layout.addWidget(self.cb_specter, 5, 0, 1, 2)
+        self.control_layout.addWidget(QLabel("Аппаратное ускорение:\n(поддерживаются карты\nnvidia)"), 6, 0)
         self.control_layout.addWidget(self.station_ip, 0, 1)
         self.control_layout.addWidget(self.channel_list, 1, 1)
         self.control_layout.addWidget(self.video_source, 2, 1)
         self.control_layout.addWidget(self.audio_source, 3, 1)
-        self.control_layout.addWidget(self.gpuchecker, 4, 1)
-        self.control_layout.addWidget(self.connect_button, 5, 0, 1, 2)
-        self.control_layout.addWidget(self.immitation_button, 6, 0, 1, 2)
+        self.control_layout.addWidget(self.gpuchecker, 6, 1)
+        self.control_layout.addWidget(self.connect_button, 7, 0, 1, 2)
+        self.control_layout.addWidget(self.immitation_button, 8, 0, 1, 2)
 
         self.avpanel_layout.addWidget(self.video_enable_button)
         self.avpanel_layout.addWidget(self.audio_enable_button)
@@ -279,16 +287,21 @@ class GuestCaller(QWidget):
         videoout = f"srtsink uri=srt://{srthost}:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
         audioout = f"srtsink uri=srt://{srthost}:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
 
+        if self.cb_specter.isChecked():
+            spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! videoconvert ! autovideosink name=audioend"
+        else:
+            spectrogramm = ""            
+
         if self.IMMITATION_FLAG:
             videoout = f"srtsink uri=srt://127.0.0.1:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
             audioout = f"srtsink uri=srt://127.0.0.1:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
 
-        audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
+        audiocaps = pipeline_utils.audiocaps()
         h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
         pipeline_string = f"""
             {video_device} name=cam ! video/x-raw,width=640,framerate=30/1 ! videoscale ! videoconvert ! 
                 {videocaps} ! videocompositor. 
-            videotestsrc pattern=snow name=fakevideosrc ! textoverlay text="Нет изображения" 
+            videotestsrc pattern=snow name=fakevideosrc ! video/x-raw,width=640,framerate=30/1 ! textoverlay text="Нет изображения" 
                 valignment=center halignment=center font-desc="Sans, 72" ! videoconvert ! videoscale ! 
                     {videocaps} ! videocompositor.
             compositor name=videocompositor ! tee name=videotee
@@ -303,8 +316,7 @@ class GuestCaller(QWidget):
             
             videotee. ! queue name=q1 !videoconvert ! autovideosink name=videoend
                         
-            audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! videoconvert ! 
-                autovideosink name=audioend
+            {spectrogramm}
             audiotee. ! queue name=q2 ! audioconvert ! audioresample ! {audiocaps} ! opusenc ! 
             {audioout}
             """
@@ -315,8 +327,7 @@ class GuestCaller(QWidget):
             "q0", "q1", "q2", "q3", "q4"
         ]]
         for q in qs:
-            q.set_property("max-size-bytes", 100000) 
-            q.set_property("max-size-buffers", 0) 
+            pipeline_utils.setup_queuee(q)
 
         self.bus = self.common_pipeline.get_bus()
         self.bus.add_signal_watch()
@@ -361,14 +372,21 @@ class GuestCaller(QWidget):
         
 
         srtlatency = self.SRTLATENCY
-        audiocaps = "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
+        audiocaps = pipeline_utils.audiocaps()
         
         videopart = f"""
             srtsrc {srtin0uri} latency={srtlatency}
                  ! h264parse ! {videodecoder} ! videoconvert ! tee name=videotee 
             videotee. ! queue name=q0 ! autovideosink name=fbvideoend sync=false
         """
-        #videopart = ""
+
+        if not self.cb_feedback.isChecked():
+            videopart = f"srtsrc {srtin0uri} latency={srtlatency} ! fakesink"
+
+        if self.cb_specter.isChecked():
+            spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! videoconvert ! autovideosink name=fbaudioend sync=false"
+        else:
+            spectrogramm = ""                 
 
         self.feedback_pipeline = Gst.parse_launch(f"""
             {videopart}
@@ -377,18 +395,14 @@ class GuestCaller(QWidget):
                 opusparse ! opusdec ! {audiocaps} ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
                     ! tee name=audiotee
             audiotee. ! queue name=q2 ! audioconvert ! audioresample ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
-            audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! 
-                videoconvert ! autovideosink name=fbaudioend sync=false
+            {spectrogramm}
         """)
 
         qs = [ self.feedback_pipeline.get_by_name(qname) for qname in [
             "q2", "q3", "q0"
         ]]
         for q in qs:
-            if q is None:
-                continue
-            q.set_property("max-size-bytes", 100000) 
-            q.set_property("max-size-buffers", 0) 
+            pipeline_utils.setup_queuee(q)
                 
         self.fbbus = self.feedback_pipeline.get_bus()
         self.fbbus.add_signal_watch()

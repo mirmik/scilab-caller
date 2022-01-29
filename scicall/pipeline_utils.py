@@ -314,3 +314,4 @@ def setup_queuee(q):
     q.set_property("min-threshold-bytes", max_threshold_bytes()) 
     q.set_property("min-threshold-buffers", max_threshold_buffers())
     q.set_property("min-threshold-time", max_threshold_time())
+    q.set_property("silent", True)

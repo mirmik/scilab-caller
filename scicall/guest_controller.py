@@ -321,7 +321,8 @@ class ConnectionController(QWidget):
         udpaudiomix = ""
         for i in self.sound_feedback_list():
             udpaudiomix = udpaudiomix + f"""udpsrc port={internal_channel_udpspam_port(i)} reuse=true ! opusparse ! 
-                opusdec ! {audiocaps} ! queue name=uq{i} ! amixer. \n"""
+                opusdec ! {audiocaps} ! queue name=quu{i} ! audioconvert ! audioresample ! queue name=uq{i} ! amixer. 
+            \n"""
 
         videopart = f"""
             videotestsrc ! {videocaps} ! videoconvert ! videoscale ! queue name=q0 ! tee name=videotee ! queue name=q2 ! 
@@ -336,7 +337,7 @@ class ConnectionController(QWidget):
         pstr = f"""
             {videopart}
 
-            audiomixer name=amixer ! tee name=audiotee ! queue name=q1 ! audioconvert ! audioresample ! 
+            audiomixer name=amixer ! queue name=qq ! tee name=audiotee ! queue name=q1 ! audioconvert ! audioresample ! 
                 {audiocaps} ! opusenc
                     ! srtsink uri=srt://:{srtport+1} latency={srtlatency} sync=false                
 
@@ -349,7 +350,7 @@ class ConnectionController(QWidget):
 
         self.feedback_pipeline = Gst.parse_launch(pstr)
 
-        qs = [ "q0", "q1", "q2", "q3" ] + [f"uq{i}" for i in self.sound_feedback_list()]
+        qs = [ "q0", "q1", "q2", "q3", "qq" ] + [f"uq{i}" for i in self.sound_feedback_list()] + [f"quu{i}" for i in self.sound_feedback_list()] + [f"quuu{i}" for i in self.sound_feedback_list()]
         print(qs)
         qs = [ self.feedback_pipeline.get_by_name(qname) for qname in qs ]
         for q in qs:

@@ -332,7 +332,7 @@ class ConnectionController(QWidget):
                 ! srtsink uri=srt://:{srtport} latency={srtlatency} sync=false
 
         """
-        #videopart=""
+        videopart=""
 
         pstr = f"""
             {videopart}

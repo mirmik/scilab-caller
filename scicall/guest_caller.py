@@ -381,6 +381,8 @@ class GuestCaller(QWidget):
         if not self.cb_feedback.isChecked():
             videopart = f"srtsrc {srtin0uri} latency={srtlatency} ! fakesink"
 
+        videopart = ""
+
         if self.cb_specter.isChecked():
             spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! videoconvert ! autovideosink name=fbaudioend sync=false"
         else:

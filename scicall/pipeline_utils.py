@@ -299,7 +299,7 @@ def udpbuffer_size():
 
 
 def max_size_bytes(): return 100000
-def max_size_buffers(): return 1
+def max_size_buffers(): return 3
 def max_size_time(): return 0
 def max_threshold_bytes(): return 0
 def max_threshold_buffers(): return 0

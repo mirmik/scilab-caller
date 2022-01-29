@@ -20,8 +20,21 @@ from scicall.util import (
     channel_mpeg_stream_port,
     channel_feedback_mpeg_stream_port)
 
+class Server(QTcpServer):
+    def __init__(self):
+        super().__init__()
 
+    def writeData(self, socket, data):
+        socket.writeData(data)
+
+    def incomingConnection(self, socket):
+        self.sock = QTcpSocket()
+        print(socket)
+        self.sock.setSocketDescriptor(socket)
+        
 class ConnectionController(QWidget):
+    write_socket_data = pyqtSignal(QTcpSocket, bytes)
+
     def __init__(self, number, zone):
         super().__init__()
         self.zone = zone
@@ -37,7 +50,8 @@ class ConnectionController(QWidget):
         self.feedback_spectroscope = GstreamerDisplay() 
         self.layout = QHBoxLayout()
         self.clients = []
-        self.server = QTcpServer()
+        self.server = Server()
+        self.write_socket_data.connect(self.server.writeData, Qt.QueuedConnection)
         self.server.newConnection.connect(self.on_server_new_connect)
         self.listener = None
 
@@ -101,6 +115,7 @@ class ConnectionController(QWidget):
     def on_server_new_connect(self):
         print("STATION: on_server_connect")
         client = self.server.nextPendingConnection()
+        client = self.server.sock
 
         if len(self.clients) == 0:
             client.readyRead.connect(self.client_ready_read)
@@ -137,7 +152,7 @@ class ConnectionController(QWidget):
 
     def send_to_opposite(self, dct):
         client = self.clients[0]
-        client.writeData(json.dumps(dct).encode("utf-8"))
+        self.write_socket_data.emit(client, json.dumps(dct).encode("utf-8"))
 
     def stop_control_server(self):
         for c in self.clients:
@@ -225,10 +240,11 @@ class ConnectionController(QWidget):
         udpspam = internal_channel_udpspam_port(self.channelno)
         self.common_pipeline = Gst.parse_launch(
             f"""srtsrc uri=srt://:{srtport} wait-for-connection=true latency={srtlatency} 
-                    ! queue name=q0 ! tsparse ! tsdemux name=demuxer
+                    ! queue name=q0 ! h264parse ! {videodecoder} ! tee name=t1 
 
-            demuxer. ! queue name=q1 ! h264parse ! {videodecoder} ! tee name=t1 
-            demuxer. ! queue name=q2 ! opusparse ! opusdec ! tee name=t2 
+            srtsrc uri=srt://:{srtport+1} wait-for-connection=true latency={srtlatency} ! 
+            queue name=q2 ! opusparse ! opusdec ! audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1
+ ! audioconvert ! audioresample !  tee name=t2 
             
             t1. ! queue name=qt0 ! videoconvert ! autovideosink sync=false name=videoend
             t1. ! queue name=qt2 ! appsink name=appsink
@@ -238,7 +254,7 @@ class ConnectionController(QWidget):
             t2. ! queue name=qt3 !audioconvert ! opusenc ! udpsink host=127.0.0.1 port={udpspam} sync=false
         """)
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
-            "q0", "q1", "q2", "qt0", "qt1", "qt2", "qt3"
+            "q0", "q2", "qt0", "qt1", "qt2", "qt3"
         ]]
         for q in qs:
             q.set_property("max-size-bytes", 100000) 
@@ -379,7 +395,7 @@ class ConnectionController(QWidget):
     def start_streams(self):
         self.start_common_stream()
         time.sleep(0.2)
-        self.start_feedback_stream()
+        #self.start_feedback_stream()
         time.sleep(0.2)
 
     def stop_streams(self):
@@ -398,7 +414,7 @@ class ConnectionControllerZone(QWidget):
         self.hlayout.addWidget(QLabel("Использовать аппаратное ускорение: "))
         self.hlayout.addWidget(self.gpuchecker)
         self.vlayout.addLayout(self.hlayout)
-        self.gpuchecker.set(pipeline_utils.GPUType.NVIDIA)
+        #self.gpuchecker.set(pipeline_utils.GPUType.NVIDIA)
         
         for i in range(3):
             self.add_zone(i, self)

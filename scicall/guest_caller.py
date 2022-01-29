@@ -258,29 +258,31 @@ class GuestCaller(QWidget):
                 video/x-raw,width=640,height=480,framerate=30/1 ! videocompositor. 
             videotestsrc pattern=snow name=fakevideosrc ! textoverlay text="Нет изображения" 
                 valignment=center halignment=center font-desc="Sans, 72" ! videoscale ! 
-                    video/x-raw,width=640,height=480 ! videocompositor.
+                    video/x-raw,width=640,height=480,framerate=30/1 ! videocompositor.
             compositor name=videocompositor ! tee name=videotee
 
-            {audio_device} name=mic ! audioconvert ! volume name=volume ! volume name=onoffvol 
+            {audio_device} name=mic ! volume name=volume ! volume name=onoffvol 
                 ! tee name=audiotee 
 
             videotee. ! queue name=q0 ! videoconvert ! {videocoder} ! 
                 video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1 ! 
-                     muxer.
-            videotee. ! queue name=q1 !videoconvert ! autovideosink sync=false name=videoend
-
-            audiotee. ! queue name=q2 ! audioconvert ! opusenc ! muxer.                        
-            audiotee. ! queue name=q3 !audioconvert ! spectrascope ! videoconvert ! 
-                autovideosink sync=false name=audioend
+                     queue name=q4 ! 
+            srtsink uri=srt://{srthost}:{srtport} 
+                wait-for-connection=true latency={srtlatency} sync=false
             
-            mpegtsmux name=muxer ! srtsink uri=srt://{srthost}:{srtport} 
-                name=srtout wait-for-connection=true latency={srtlatency} sync=false async=true
+            videotee. ! queue name=q1 !videoconvert ! autovideosink name=videoend
+                        
+            audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! videoconvert ! 
+                autovideosink name=audioend
+            audiotee. ! queue name=q2 ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1 ! opusenc ! 
+            srtsink uri=srt://{srthost}:{srtport+1} 
+                wait-for-connection=true latency={srtlatency} sync=false
             """
         print (pipeline_string)
         self.common_pipeline = Gst.parse_launch(pipeline_string)
 
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
-            "q0", "q1", "q2", "q3"
+            "q0", "q1", "q2", "q3", "q4"
         ]]
         for q in qs:
             q.set_property("max-size-bytes", 100000) 
@@ -411,7 +413,7 @@ class GuestCaller(QWidget):
     def start_streams(self):
         self.start_common_stream()
         time.sleep(0.2)
-        self.start_feedback_stream()
+        #self.start_feedback_stream()
         time.sleep(0.2)
         self.volume_action()
         self.fb_volume_action()

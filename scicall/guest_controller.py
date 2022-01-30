@@ -56,7 +56,9 @@ class ConnectionController(QWidget):
         self.server.newConnection.connect(self.on_server_new_connect)
         self.listener = None
 
-        self.cb_get_vmix_srt = QCheckBox("Забирать srt/vmix")
+        self.cb_get_vmix_srt = QCheckBox("Забирать srt/vmix(видео)")
+        self.cb_ndi_output = QCheckBox("Писать ndi поток(видео+звук)")
+        self.cb_ndi_output.setChecked(True)
 
         self.common_channel_cb = QCheckBox("Прямой канал:")
         self.feedback_channel_cb = QCheckBox("Обратный канал:")
@@ -88,6 +90,9 @@ class ConnectionController(QWidget):
         self.control_layout2.addWidget(QLabel("vmix srt port:"))      
         self.control_layout2.addWidget(self.port_srt_vmix_edit)
         self.control_layout2.addWidget(self.cb_get_vmix_srt)
+
+        self.control_layout2.addWidget(self.cb_ndi_output)
+
         self.control_layout2.addStretch()
 
         self.layout.addWidget(self.spectroscope)
@@ -163,10 +168,20 @@ srt порты взаимодействия с клиентом:
             client.disconnected.connect(self.client_disconnected)
             self.clients.append(client)
             self.send_to_opposite({"cmd": "hello_from_server"})
+            self.create_keepaliver()
         else:
             dct = {"cmd": "client_collision"}
             client.writeData((json.dumps(dct) + "\n").encode("utf-8"))
             client.close()
+
+    def create_keepaliver(self):
+        self.keepaliver = QTimer()
+        self.keepaliver.timeout.connect(self.keepalive_handler)
+        self.keepaliver.setInterval(1500)
+        self.keepaliver.start()
+
+    def keepalive_handler(self):
+        self.send_to_opposite({"cmd": "keepalive", "ch": self.channelno+1})
 
     def restart_button_handle(self):
         self.send_to_opposite({"cmd": "remote_restart"})
@@ -179,6 +194,8 @@ srt порты взаимодействия с клиентом:
         print("STATION : guest_disconnected")
         self.clients.clear()
         self.stop_streams()
+        self.keepaliver.stop()
+        self.keepaliver = None
 
     def client_ready_read(self):
         client = self.clients[0]
@@ -191,7 +208,10 @@ srt порты взаимодействия с клиентом:
         print("GUEST >>", data)
         cmd = data["cmd"]
         
-        if cmd == "hello_from_guest":
+        if cmd == "keepalive":
+            pass
+
+        elif cmd == "hello_from_guest":
             self.send_to_opposite({"cmd": "set_srtlatency", "data": self.get_srt_latency()})
             time.sleep(0.2)
 
@@ -279,6 +299,11 @@ srt порты взаимодействия с клиентом:
 
         audiocaps = pipeline_utils.audiocaps()
         udpspam = internal_channel_udpspam_port(self.channelno)
+
+        ndisink = f"ndisink ndi-name={self.ndi_name()}"
+        if not self.cb_ndi_output.isChecked():
+            ndisink = "fakesink"
+
         self.common_pipeline = Gst.parse_launch(
             f"""srtsrc uri=srt://:{srtport} wait-for-connection=true latency={srtlatency} 
                     ! queue name=q0 ! h264parse ! {videodecoder} ! tee name=t1 
@@ -298,7 +323,7 @@ srt порты взаимодействия с клиентом:
             t1. ! queue ! videoconvert ! combiner.
             t2. ! queue ! audioconvert ! audioresample ! combiner.
 
-            ndisinkcombiner name=combiner ! ndisink ndi-name={self.ndi_name()} 
+            ndisinkcombiner name=combiner ! {ndisink} 
         """)
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
             "q0", "q2", "qt0", "qt1", "qt2", "qt3"
@@ -383,7 +408,7 @@ srt порты взаимодействия с клиентом:
                 videoconvert ! autovideosink name=fbaudioend sync=false            
 
             audiotee. ! queue name=q1 ! audioconvert ! audioresample ! {audiocaps} ! opusenc
-                    ! srtsink uri=srt://:{srtport+1} latency={srtlatency} sync=false
+                    ! srtsink  wait-for-connection=true uri=srt://:{srtport+1} latency={srtlatency} sync=false
 
             {appaudiomix}
         """
@@ -438,7 +463,7 @@ srt порты взаимодействия с клиентом:
                 
                 videotee. ! queue name=q4 ! autovideosink name=fbvideoend
                 videotee. ! queue name=q5 ! {videocoder}
-                    ! srtsink uri=srt://:{srtport} latency={srtlatency} sync=false
+                    ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
             """)
     
             self.fbbus2 = self.fb2.get_bus()
@@ -454,7 +479,7 @@ srt порты взаимодействия с клиентом:
                 videotestsrc ! videoconvert ! {videocaps} ! tee name=videotee                
                 videotee. ! queue name=q4 ! autovideosink name=fbvideoend
                 videotee. ! queue name=q5 ! {videocoder}
-                    ! srtsink uri=srt://:{srtport} latency={srtlatency} sync=false
+                    ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
             """)
 
             self.fbbus2 = self.fb2.get_bus()
@@ -553,15 +578,15 @@ srt порты взаимодействия с клиентом:
 
     def start_streams(self):
         self.start_common_stream()
-        time.sleep(0.2)
+        #time.sleep(0.5)
         self.start_feedback_stream()
-        time.sleep(0.2)
+        #time.sleep(0.5)
 
     def stop_streams(self):
         self.stop_common_stream()
-        time.sleep(0.2)
+        #time.sleep(0.5)
         self.stop_feedback_stream()
-        time.sleep(0.2)
+        #time.sleep(0.5)
 
 class ConnectionControllerZone(QWidget):
     def __init__(self):

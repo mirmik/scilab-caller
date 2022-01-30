@@ -90,7 +90,7 @@ class GuestCaller(QWidget):
         self.cb_specter.setChecked(True)
 
         self.gpuchecker = pipeline_utils.GPUChecker()
-        self.imitation_label_text = "Запуск без установки соединения"
+        self.imitation_label_text = "Запуск без установки соединения (тест оборудования)"
         self.stop_immitation_label_text = "Остановить"
         self.connect_label_text = "Установить соединение"
         self.disconnect_label_text = "Разорвать соединение"
@@ -126,8 +126,14 @@ class GuestCaller(QWidget):
         self.control_layout.addWidget(self.video_source, 2, 1)
         self.control_layout.addWidget(self.audio_source, 3, 1)
         self.control_layout.addWidget(self.gpuchecker, 6, 1)
-        self.control_layout.addWidget(self.connect_button, 7, 0, 1, 2)
-        self.control_layout.addWidget(self.immitation_button, 8, 0, 1, 2)
+        self.control_layout.addWidget(self.connect_button, 8, 0, 1, 2)
+        self.control_layout.addWidget(self.immitation_button, 7, 0, 1, 2)
+
+        label = QLabel()
+        label.setMinimumSize( QSize(0,0) )
+        label.setMaximumSize( QSize(16777215, 16777215) )
+        label.setSizePolicy( QSizePolicy.Expanding, QSizePolicy.Preferred );
+        self.control_layout.addWidget(label, 9,0)
 
         self.avpanel_layout.addWidget(self.video_enable_button)
         self.avpanel_layout.addWidget(self.audio_enable_button)
@@ -220,12 +226,14 @@ class GuestCaller(QWidget):
             msgBox.exec()         
         elif cmd == "remote_restart":
             self.remote_restart()
+        elif cmd == "keepalive":
+            pass
         else:
             print("unresolved command")        
 
     def remote_restart(self):
         self.connect_action()
-        QTimer.singleShot(3000, self.connect_action)
+        QTimer.singleShot(1000, self.connect_action)
 
     def send_to_opposite(self, dct):
         self.client.writeData(json.dumps(dct).encode("utf-8"))
@@ -241,13 +249,34 @@ class GuestCaller(QWidget):
         success = self.client.waitForConnected(400)
         if success:
             print("success")
+            self.client.disconnected.connect(self.on_disconnect)
+            self.create_keepaliver()
         else:            
             msgBox = QMessageBox()
             msgBox.setText("Не удалось установить соединение с сервером. \nСервер недоступен, или запрошенный канал неактивен.")
             msgBox.exec()
 
+    def create_keepaliver(self):
+        self.keepaliver = QTimer()
+        self.keepaliver.timeout.connect(self.keepalive_handler)
+        self.keepaliver.setInterval(1500)
+        self.keepaliver.start()
+
+    def keepalive_handler(self):
+        self.send_to_opposite({"cmd": "keepalive", "ch": self.channelno()+1})
+
+    def on_disconnect(self):
+        self.stop_streams()
+        self.client.disconnectFromHost()
+        
+        if self.keepaliver:
+            self.keepaliver.stop()
+            self.keepaliver = None
+
     def immitation_action(self):
         if self.common_pipeline:
+            if self.client:
+                self.client.disconnectFromHost()
             self.stop_streams()
             return
 
@@ -387,13 +416,13 @@ class GuestCaller(QWidget):
         audiocaps = pipeline_utils.audiocaps()
         
         videopart = f"""
-            srtsrc {srtin0uri} latency={srtlatency}
+            srtsrc {srtin0uri} latency={srtlatency} wait-for-connection=true
                  ! h264parse ! {videodecoder} ! videoconvert ! tee name=videotee 
             videotee. ! queue name=q0 ! autovideosink name=fbvideoend sync=false
         """
 
         if not self.cb_feedback.isChecked():
-            videopart = f"srtsrc {srtin0uri} latency={srtlatency} ! fakesink"
+            videopart = f"srtsrc {srtin0uri} wait-for-connection=true latency={srtlatency} ! fakesink"
 
         #videopart = ""
 
@@ -404,7 +433,7 @@ class GuestCaller(QWidget):
 
 
         audiopart = f"""
-            srtsrc {srtin1uri} latency={srtlatency} ! 
+            srtsrc {srtin1uri} latency={srtlatency} wait-for-connection=true ! 
                 opusparse ! opusdec ! {audiocaps} ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
                     ! tee name=audiotee
             audiotee. ! queue name=q2 ! audioconvert ! audioresample ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
@@ -496,12 +525,13 @@ class GuestCaller(QWidget):
         
     def start_streams(self):
         self.start_common_stream()
-        time.sleep(0.2)
+        #time.sleep(0.5)
         self.start_feedback_stream()
-        time.sleep(0.2)
+        #time.sleep(0.5)
 
     def stop_streams(self):
         self.stop_common_stream()
-        time.sleep(0.2)
+        #time.sleep(0.5)
         self.stop_feedback_stream()
-        time.sleep(0.2)
+        #time.sleep(0.5)
+        self.IMMITATION_FLAG = False

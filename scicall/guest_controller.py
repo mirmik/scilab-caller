@@ -159,7 +159,7 @@ srt порты взаимодействия с клиентом:
         return channel_control_port(self.channelno)
 
     def on_server_new_connect(self):
-        print("STATION: on_server_connect")
+        print("STATION: on_server_connect", self.channelno, self.clients)
         client = self.server.nextPendingConnection()
         client = self.server.sock
 
@@ -175,7 +175,8 @@ srt порты взаимодействия с клиентом:
             client.close()
 
     def create_keepaliver(self):
-        self.keepaliver = QTimer()
+        print("create_keepaliver")
+        self.keepaliver = QTimer(self)
         self.keepaliver.timeout.connect(self.keepalive_handler)
         self.keepaliver.setInterval(1500)
         self.keepaliver.start()
@@ -599,7 +600,7 @@ class ConnectionControllerZone(QWidget):
         self.hlayout.addWidget(QLabel("Использовать аппаратное ускорение: "))
         self.hlayout.addWidget(self.gpuchecker)
         self.vlayout.addLayout(self.hlayout)
-        self.gpuchecker.set(pipeline_utils.GPUType.NVIDIA)
+        #self.gpuchecker.set(pipeline_utils.GPUType.NVIDIA)
         
         for i in range(3):
             self.add_zone(i, self)

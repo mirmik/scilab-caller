@@ -20,6 +20,9 @@ from scicall.util import (
     channel_mpeg_stream_port,
     channel_feedback_mpeg_stream_port)
 
+from scicall.external_signals import ExternalSignalPanel
+from scicall.external_signals import ExternalSignalsZone
+
 class Server(QTcpServer):
     def __init__(self):
         super().__init__()
@@ -56,7 +59,7 @@ class ConnectionController(QWidget):
         self.server.newConnection.connect(self.on_server_new_connect)
         self.listener = None
 
-        self.cb_get_vmix_srt = QCheckBox("Забирать srt/vmix(видео)")
+        self.cb_get_vmix_srt = QCheckBox("Забирать ndi(видео)")
         self.cb_ndi_output = QCheckBox("Писать ndi поток(видео+звук)")
         self.cb_ndi_output.setChecked(True)
 
@@ -74,7 +77,7 @@ class ConnectionController(QWidget):
         self.info_layout.addWidget(self.infowdg)
         self.info_layout.addStretch()
 
-        self.port_srt_vmix_edit = QLineEdit(str(10000+self.channelno))
+        self.port_srt_vmix_edit = QLineEdit(str("ndiinputname"))
 
         self.control_layout = QVBoxLayout()
         self.control_layout2 = QVBoxLayout()
@@ -87,7 +90,7 @@ class ConnectionController(QWidget):
         self.control_layout.addWidget(self.srtlatency_edit)
         self.control_layout.addStretch()
 
-        self.control_layout2.addWidget(QLabel("vmix srt port:"))      
+        self.control_layout2.addWidget(QLabel("Input NDI name:"))      
         self.control_layout2.addWidget(self.port_srt_vmix_edit)
         self.control_layout2.addWidget(self.cb_get_vmix_srt)
 
@@ -123,8 +126,10 @@ class ConnectionController(QWidget):
         self.sample_controller=None
         self.feedback_pipeline_started = False
 
-    def portsrtvmix(self):
-        return int(self.port_srt_vmix_edit.text())
+
+
+    def input_ndi_name(self):
+        return self.port_srt_vmix_edit.text()
 
     def get_srt_latency(self):
         return int(self.srtlatency_edit.text())
@@ -206,7 +211,7 @@ srt порты взаимодействия с клиентом:
             self.new_opposite_command(data)
 
     def new_opposite_command(self, data):
-        print("GUEST >>", data)
+        #print("GUEST >>", data)
         cmd = data["cmd"]
         
         if cmd == "keepalive":
@@ -454,43 +459,60 @@ srt порты взаимодействия с клиентом:
          #       ! srtsink uri=srt://:{srtport} latency={srtlatency} sync=false
         
         """
-        self.fb2 = None
-        if self.cb_get_vmix_srt.isChecked():
-            self.fb2=Gst.parse_launch(f"""
-                srtsrc uri=srt://127.0.0.1:{self.portsrtvmix()} latency=60 wait-for-connection=true do-timestamp=true ! 
-                    queue name=q0 !  tsdemux name=mpegdemux
-                mpegdemux. ! queue name=q1 ! h264parse ! {videodecoder} ! queue name=q3 ! tee name=videotee
-                mpegdemux. ! queue name=q2 ! aacparse ! avdec_aac ! audioresample ! audioconvert ! appsink name=ndiaudioout
-                
-                videotee. ! queue name=q4 ! autovideosink name=fbvideoend
-                videotee. ! queue name=q5 ! {videocoder}
-                    ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
-            """)
+        #self.fb2 = None
+        #if self.cb_get_vmix_srt.isChecked():
+            #self.fb2=Gst.parse_launch(f"""
+            #    srtsrc uri=srt://127.0.0.1:{self.portsrtvmix()} latency=60 wait-for-connection=true do-timestamp=true ! 
+            #        queue name=q0 !  tsdemux name=mpegdemux
+            #    mpegdemux. ! queue name=q1 ! h264parse ! {videodecoder} ! queue name=q3 ! tee name=videotee
+            #    mpegdemux. ! queue name=q2 ! aacparse ! avdec_aac ! audioresample ! audioconvert ! appsink name=ndiaudioout   
+            #    videotee. ! queue name=q4 ! autovideosink name=fbvideoend
+            #    videotee. ! queue name=q5 ! {videocoder}
+            #        ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
+            #""")
+
+
+            #fb2str = f"""
+            #    ndisrc ndi-name="{self.input_ndi_name()}" ! ndisrcdemux name=demux   
+
+            #    demux.video ! queue ! videoconvert ! tee name=videotee
+            #    demux.audio ! queue ! audioconvert ! appsink name=ndiaudioout 
+
+            #    videotee. ! queue name=q4 ! autovideosink name=fbvideoend
+            #    videotee. ! queue name=q5 ! {videocoder}
+            #        ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
+            #"""
+            
+        fb2str = f"""
+            appsrc is-live=true ! queue ! compositor.
+            appsrc is-live=true ! queue ! compositor.
+            appsrc is-live=true ! queue ! compositor.
+            appsrc is-live=true ! queue ! compositor.
+            appsrc is-live=true ! queue ! compositor.
+            appsrc is-live=true ! queue ! compositor.
+            appsrc is-live=true ! queue ! compositor.
+
+            compositor name=compositor sink_0::alpha=0.5 sink_1::alpha=0.5 ! queue ! tee name=videotee 
+
+            videotee. ! queue name=q4 ! autovideosink name=fbvideoend
+            videotee. ! queue name=q5 ! {videocoder}
+                ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
+        """
+        print(fb2str)
+
+        self.fb2=Gst.parse_launch(fb2str)
     
-            self.fbbus2 = self.fb2.get_bus()
-            self.fbbus2.add_signal_watch()
-            self.fbbus2.enable_sync_message_emission()
-            self.fbbus2.connect('sync-message::element', self.on_sync_message)
-            self.fbbus2.connect('message::error', self.on_error_message)
-            self.fbbus2.connect("message::eos", self.eos_handle)
-            self.fb2.set_state(Gst.State.PLAYING)
+        """    videotee. ! queue name=q5 ! {videocoder}
+                ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
+        """
 
-        else:
-            self.fb2=Gst.parse_launch(f"""
-                videotestsrc ! videoconvert ! {videocaps} ! tee name=videotee                
-                videotee. ! queue name=q4 ! autovideosink name=fbvideoend
-                videotee. ! queue name=q5 ! {videocoder}
-                    ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
-            """)
-
-            self.fbbus2 = self.fb2.get_bus()
-            self.fbbus2.add_signal_watch()
-            self.fbbus2.enable_sync_message_emission()
-            self.fbbus2.connect('sync-message::element', self.on_sync_message)
-            self.fbbus2.connect('message::error', self.on_error_message)
-            self.fbbus2.connect("message::eos", self.eos_handle)
-            self.fb2.set_state(Gst.State.PLAYING)
-
+        self.fbbus2 = self.fb2.get_bus()
+        self.fbbus2.add_signal_watch()
+        self.fbbus2.enable_sync_message_emission()
+        self.fbbus2.connect('sync-message::element', self.on_sync_message)
+        self.fbbus2.connect('message::error', self.on_error_message)
+        self.fbbus2.connect("message::eos", self.eos_handle)
+        self.fb2.set_state(Gst.State.PLAYING)
 
 
         qs = [ "q0", "q1", "q2", "q3", "qq" ] + [f"uq{i}" for i in self.sound_feedback_list()] + [f"quu{i}" for i in self.sound_feedback_list()] + [f"quuu{i}" for i in self.sound_feedback_list()]
@@ -589,10 +611,12 @@ srt порты взаимодействия с клиентом:
         self.stop_feedback_stream()
         #time.sleep(0.5)
 
+
 class ConnectionControllerZone(QWidget):
     def __init__(self):
         super().__init__()
         self.zones = []
+        self.external_zone = ExternalSignalsZone(self)
         self.vlayout = QVBoxLayout()
         self.hlayout = QHBoxLayout()
         self.gpuchecker = pipeline_utils.GPUChecker()
@@ -600,11 +624,12 @@ class ConnectionControllerZone(QWidget):
         self.hlayout.addWidget(QLabel("Использовать аппаратное ускорение: "))
         self.hlayout.addWidget(self.gpuchecker)
         self.vlayout.addLayout(self.hlayout)
-        #self.gpuchecker.set(pipeline_utils.GPUType.NVIDIA)
+        self.vlayout.addWidget(self.external_zone)
+        self.gpuchecker.set(pipeline_utils.GPUType.NVIDIA)
         
         for i in range(3):
             self.add_zone(i, self)
-            self.zones[i].enable_disable_clicked()
+            #self.zones[i].enable_disable_clicked()
 
         self.setLayout(self.vlayout)
 
@@ -619,3 +644,7 @@ class ConnectionControllerZone(QWidget):
     def push_sample(self, sample, chno):
         for z in self.zones:
             z.push_sample(sample, chno)
+
+    def new_sample_external_channel(self, chno, sample):
+        pass
+        #print(chno, sample)

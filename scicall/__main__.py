@@ -16,6 +16,8 @@ from enum import Enum
 import traceback
 import sys
 
+from scicall.external_signals import ExternalSignalsZone
+
 class GstreamerDisplay(QWidget):
     """ Виджет, в котором рисует выходной элемент видоконвеера """
 
@@ -168,26 +170,21 @@ class MainWindow(QMainWindow):
         self.setFixedSize(self.minimumSizeHint())
         self.adjustSize()
 
-    def closeEvent(self, event):
-        #invoke_destructors()
-        os._exit(0)
-        pass
-
 def srt_disconnect():
     print("SRT_DISCONNECT")
 
 def main():
     Gst.init(sys.argv)
-    Gst.debug_set_active(True)
-    Gst.debug_set_default_threshold(3)
-    GObject.threads_init()
+#    Gst.debug_set_active(True)
+#    Gst.debug_set_default_threshold(3)
 
     #setup_interrupt_handlers()
     #Interaptor.instance().start_listen()
     #Interaptor.instance().srt_disconnect.connect(srt_disconnect)
     app = QApplication(sys.argv)
     app.quitOnLastWindowClosed = False
-    window = MainWindow()
+    #window = MainWindow()
+    window = ConnectionControllerZone()
     window.show()
     return sys.exit(app.exec())
 

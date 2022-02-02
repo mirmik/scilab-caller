@@ -648,3 +648,9 @@ class ConnectionControllerZone(QWidget):
     def new_sample_external_channel(self, chno, sample):
         pass
         #print(chno, sample)
+
+    def external_video_sample(self, chno, sample):
+        pass
+
+    def external_audio_sample(self, chno, sample):
+        pass

@@ -40,6 +40,8 @@ class ConnectionController(QWidget):
 
     def __init__(self, number, zone):
         super().__init__()
+        self.fb2=None
+        self.extvid = None
         self.audio_appsrcs = []
         self.zone = zone
         self.flow_runned = False
@@ -319,16 +321,12 @@ srt порты взаимодействия с клиентом:
              ! audioconvert ! audioresample !  tee name=t2 
             
             t1. ! queue name=qt0 ! videoconvert ! autovideosink sync=false name=videoend
-            t1. ! queue name=qt2 ! appsink name=appsink
-        
             t2. ! queue name=qt1 !audioconvert ! spectrascope ! videoconvert ! 
                 autovideosink sync=false name=audioend
             t2. ! queue name=qt3 !audioconvert ! {audiocaps} ! opusenc ! appsink emit-signals=True name=soundmixout
         
-
             t1. ! queue ! videoconvert ! combiner.
             t2. ! queue ! audioconvert ! audioresample ! combiner.
-
             ndisinkcombiner name=combiner ! {ndisink} 
         """)
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
@@ -337,13 +335,13 @@ srt порты взаимодействия с клиентом:
         for q in qs:
             pipeline_utils.setup_queuee(q)
 
-        appsink = self.common_pipeline.get_by_name("appsink")
-        appsink.set_property("sync", False)
-        appsink.set_property("emit-signals", True)
-        appsink.set_property("max-buffers", 1)
-        appsink.set_property("drop", True)
-        appsink.set_property("emit-signals", True)
-        appsink.connect("new-sample", self.new_sample, None)
+#        appsink = self.common_pipeline.get_by_name("appsink")
+#        appsink.set_property("sync", False)
+#        appsink.set_property("emit-signals", True)
+#        appsink.set_property("max-buffers", 1)
+#        appsink.set_property("drop", True)
+#        appsink.set_property("emit-signals", True)
+#        appsink.connect("new-sample", self.new_sample, None)
 
         soundmixout = self.common_pipeline.get_by_name("soundmixout")
         soundmixout.set_property("sync", False)
@@ -436,12 +434,17 @@ srt порты взаимодействия с клиентом:
         self.feedback_pipeline.set_state(Gst.State.PLAYING)
         self.feedback_pipeline_started = True
 
+        # appsrc is-live=true name=extvid
         fb2str = f"""
-            appsrc is-live=true name=extvid ! queue ! tee name=videotee 
-            videotee. ! queue name=q4 ! autovideosink name=fbvideoend
-            videotee. ! queue name=q5 ! {videocoder}
-                ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
+            appsrc caps={videocaps} emit-signals=True name=extvid ! queue ! videoconvert ! mix.
+            compositor name=mix ! videoconvert ! {videocoder}
+                ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false  ts-offset=-2000000
         """
+
+        """    videotee. ! queue name=q4 ! autovideosink name=fbvideoend    
+        """
+        
+
         self.fb2=Gst.parse_launch(fb2str)
         self.fbbus2 = self.fb2.get_bus()
         self.fbbus2.add_signal_watch()
@@ -450,14 +453,21 @@ srt порты взаимодействия с клиентом:
         self.fbbus2.connect('message::error', self.on_error_message)
         self.fbbus2.connect("message::eos", self.eos_handle)
         self.extvid = self.fb2.get_by_name("extvid")
-        self.extvid.set_property("emit-signals", True)
+        if self.extvid:
+            self.extvid.set_property("emit-signals", True)
+
+        qs = [ "q0", "q1", "q2", "q3", "q4", "q5" ]
+        qs = [ self.fb2.get_by_name(qname) for qname in qs ]
+        for q in qs:
+            pipeline_utils.setup_queuee(q) 
+        
         self.fb2.set_state(Gst.State.PLAYING)
         
         self.feedback_pipelines = [ self.feedback_pipeline, self.fb2 ]
 
-    def new_sample(self, a, b):
-        self.last_sample = time.time()
-        return Gst.FlowReturn.OK
+#    def new_sample(self, a, b):
+#        self.last_sample = time.time()
+#        return Gst.FlowReturn.OK
 
     def sample_flow_control(self):
         if self.flow_runned is False and time.time() - self.last_sample < 0.3:
@@ -537,12 +547,21 @@ srt порты взаимодействия с клиентом:
     def is_connected(self):
         return self.common_pipeline is not None
 
-    def external_video_enabled(self):
+    def external_video_enabled(self, chno):
         return True
 
     def send_external_video_sample(self, chno, sample):
-        self.extvid.emit("push-sample", sample)
+        print("push extvid")
+        if self.extvid:
+            self.extvid.emit("push-sample", sample)
 
+    def stop_external_stream(self):
+        if self.fb2:
+            self.stop_feedback_stream()
+        
+    def start_external_stream(self):
+        self.start_feedback_stream()
+        
 class ConnectionControllerZone(QWidget):
     def __init__(self):
         super().__init__()
@@ -587,3 +606,11 @@ class ConnectionControllerZone(QWidget):
 
     def external_audio_sample(self, chno, sample):
         pass
+
+    def stop_external_stream(self):
+        for z in self.zones:
+            z.stop_external_stream()
+
+    def start_external_stream(self):
+        for z in self.zones:
+            z.start_external_stream()

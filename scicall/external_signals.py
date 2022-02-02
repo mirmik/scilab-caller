@@ -70,7 +70,9 @@ class ExternalSignalPanel(QWidget):
 
     def update_control(self):
         self.stop_pipeline()
+        self.zone.stop_external_stream()
         self.start_pipeline()
+        self.zone.start_external_stream()
 
     def source_type(self):
         return self.source_types_cb.currentText()
@@ -85,6 +87,7 @@ class ExternalSignalPanel(QWidget):
         return self.ndi_name_edit.text()
 
     def generate_pipeline_template(self):
+            videocaps = pipeline_utils.global_videocaps()
             srctype = self.source_type()
             if srctype == "Нет":
                 return None
@@ -93,12 +96,13 @@ class ExternalSignalPanel(QWidget):
                 return f"""videotestsrc {pattern} ! videoconvert ! tee name=vidtee 
                     vidtee. ! queue name=q0 ! appsink name=videoapp
                     vidtee. ! queue name=q1 ! autovideosink name=videoend
+                """
 
+                """
                     audiotestsrc ! audioconvert ! tee name=audtee 
                     audtee. ! queue name=q2 ! appsink name=audioapp
                     audtee. ! queue name=q3 ! spectrascope ! 
-                        videoconvert ! autovideosink name=audioend
-                """
+                        videoconvert ! {videocaps} ! autovideosink name=audioend"""
 
             
             elif srctype == "NDI":
@@ -129,11 +133,6 @@ class ExternalSignalPanel(QWidget):
             #    {audio_source} ! queue ! audioconvert ! spectrascope ! videoconvert ! autovideosink name=audioend 
             
 
-    def video_new_sample(self, a, b):
-        sample = self.vidapp.emit("pull-sample")
-        self.zone.new_sample_external_channel(self.chno, sample)
-        return Gst.FlowReturn.OK
-
     def start_pipeline(self):
         template = self.generate_pipeline_template()
         if not template:
@@ -154,12 +153,13 @@ class ExternalSignalPanel(QWidget):
             pipeline_utils.setup_queuee(q)  
 
         self.audioapp = self.pipeline.get_by_name("audioapp")
-        self.audioapp.set_property("sync", False)
-        self.audioapp.set_property("emit-signals", True)
-        self.audioapp.set_property("max-buffers", 1)
-        self.audioapp.set_property("drop", True)
-        self.audioapp.set_property("emit-signals", True)
-        self.audioapp.connect("new-sample", self.audio_new_sample, None)
+        if self.audioapp:
+            self.audioapp.set_property("sync", False)
+            self.audioapp.set_property("emit-signals", True)
+            self.audioapp.set_property("max-buffers", 1)
+            self.audioapp.set_property("drop", True)
+            self.audioapp.set_property("emit-signals", True)
+            self.audioapp.connect("new-sample", self.audio_new_sample, None)
 
         self.videoapp = self.pipeline.get_by_name("videoapp")
         self.videoapp.set_property("sync", False)
@@ -172,11 +172,19 @@ class ExternalSignalPanel(QWidget):
     def audio_new_sample(self, a, b):
         sample = self.audioapp.emit("pull-sample")
         self.zone.external_audio_sample(self.chno, sample)
+        #buf = sample.get_buffer()
+        #buf.pts = Gst.CLOCK_TIME_NONE 
+        #buf.dts = Gst.CLOCK_TIME_NONE 
+        #buf.duration = Gst.CLOCK_TIME_NONE
         return Gst.FlowReturn.OK
 
     def video_new_sample(self, a, b):
         sample = self.videoapp.emit("pull-sample")
         self.zone.external_video_sample(self.chno, sample)
+        #buf = sample.get_buffer()
+        #buf.pts = Gst.CLOCK_TIME_NONE 
+        #buf.dts = Gst.CLOCK_TIME_NONE 
+        #buf.duration = Gst.CLOCK_TIME_NONE
         return Gst.FlowReturn.OK
 
     def on_sync_message(self, bus, msg):

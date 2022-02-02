@@ -30,7 +30,7 @@ class GuestCaller(QWidget):
 
     def __init__(self):
         self.IMMITATION_FLAG=False
-        self.SRTLATENCY=80
+        self.SRTLATENCY=60
         self.VIDEO_DISABLE_TEXT = "Камера(отключить)"
         self.VIDEO_ENABLE_TEXT = "Камера(включить)"
         self.AUDIO_DISABLE_TEXT = "Микрофон(отключить)"
@@ -83,12 +83,6 @@ class GuestCaller(QWidget):
         self.fb_volume_slider.setValue(1000)
         self.fb_volume_slider.sliderMoved.connect(self.fb_volume_action)
 
-        self.cb_feedback = QCheckBox("Принимать обратный видеоканал:")
-        self.cb_feedback.setChecked(True)
-
-        self.cb_specter = QCheckBox("Показывать спектрограммы:")
-        self.cb_specter.setChecked(True)
-
         self.gpuchecker = pipeline_utils.GPUChecker()
         self.imitation_label_text = "Запуск без установки соединения (тест оборудования)"
         self.stop_immitation_label_text = "Остановить"
@@ -118,8 +112,6 @@ class GuestCaller(QWidget):
         self.control_layout.addWidget(QLabel("Номер канала:"), 1, 0)
         self.control_layout.addWidget(QLabel("Источник видео:"), 2, 0)
         self.control_layout.addWidget(QLabel("Источник звука:"), 3, 0)
-        self.control_layout.addWidget(self.cb_feedback, 4, 0, 1, 2)
-        self.control_layout.addWidget(self.cb_specter, 5, 0, 1, 2)
         self.control_layout.addWidget(QLabel("Аппаратное ускорение:\n(поддерживаются карты\nnvidia)"), 6, 0)
         self.control_layout.addWidget(self.station_ip, 0, 1)
         self.control_layout.addWidget(self.channel_list, 1, 1)
@@ -330,11 +322,8 @@ class GuestCaller(QWidget):
         videoout = f"srtsink uri=srt://{srthost}:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
         audioout = f"srtsink uri=srt://{srthost}:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
 
-        if self.cb_specter.isChecked():
-            spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! videoconvert ! autovideosink name=audioend"
-        else:
-            spectrogramm = ""            
-
+        spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! videoconvert ! autovideosink name=audioend"
+        
         if self.IMMITATION_FLAG:
             videoout = f"srtsink uri=srt://127.0.0.1:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
             audioout = f"srtsink uri=srt://127.0.0.1:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
@@ -421,16 +410,7 @@ class GuestCaller(QWidget):
             videotee. ! queue name=q0 ! autovideosink name=fbvideoend sync=false
         """
 
-        if not self.cb_feedback.isChecked():
-            videopart = f"srtsrc {srtin0uri} wait-for-connection=true latency={srtlatency} ! fakesink"
-
-        #videopart = ""
-
-        if self.cb_specter.isChecked():
-            spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! videoconvert ! autovideosink name=fbaudioend sync=false"
-        else:
-            spectrogramm = ""                 
-
+        spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! videoconvert ! autovideosink name=fbaudioend sync=false"
 
         audiopart = f"""
             srtsrc {srtin1uri} latency={srtlatency} wait-for-connection=true ! 

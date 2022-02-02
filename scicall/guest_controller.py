@@ -418,102 +418,8 @@ srt порты взаимодействия с клиентом:
 
             {appaudiomix}
         """
-        """audioconvert
-             ! {audiocaps} ! queue name=qq ! tee name=audiotee
-
-            audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! 
-                videoconvert ! autovideosink name=fbaudioend sync=false"""
-
-        """              ! queue name=q1 ! audioconvert ! audioresample ! 
-                {audiocaps} ! opusenc
-                    ! srtsink uri=srt://:{srtport+1} latency={srtlatency} sync=false                
-"""
-
-
-        print(pstr)
 
         self.feedback_pipeline = Gst.parse_launch(pstr)
-
-        #self.fb2=Gst.parse_launch(f"""
-        #     ndisrc ndi-name="ASUS-PC19\ \(vMix\ -\ Output\ 4\)"  bandwidth=20 color-format=fastest max-queue-length=1000 ! 
-        #        ndisrcdemux name=ndemux
-        #    ndemux.video ! queue ! videoconvert ! appsink name=appvid
-        #    ndemux.audio ! queue ! audioconvert ! appsink name=appaud
-        """)
-
-        self.fb3=Gst.parse_launch(f"""
-        #    appsrc name=ndivid emit-signals=true ! 
-        #        videoconvert ! autovideosink
-        """)
-        self.appvidsink = self.fb3.get_by_name("ndivid")
-
-
-        self.appvidsink.connect("need-data", self.appvidsink_need_data)
-
-        
-
-          #   ndemux.audio ! queue name=q1 ! audioconvert ! {audiocaps} ! autoaudiosink
-
-
-         #       videotee. ! queue ! videoconvert ! {videocaps} ! {videocoder} ! {h264caps}
-         #       ! srtsink uri=srt://:{srtport} latency={srtlatency} sync=false
-        
-        """
-        #self.fb2 = None
-        #if self.cb_get_vmix_srt.isChecked():
-            #self.fb2=Gst.parse_launch(f"""
-            #    srtsrc uri=srt://127.0.0.1:{self.portsrtvmix()} latency=60 wait-for-connection=true do-timestamp=true ! 
-            #        queue name=q0 !  tsdemux name=mpegdemux
-            #    mpegdemux. ! queue name=q1 ! h264parse ! {videodecoder} ! queue name=q3 ! tee name=videotee
-            #    mpegdemux. ! queue name=q2 ! aacparse ! avdec_aac ! audioresample ! audioconvert ! appsink name=ndiaudioout   
-            #    videotee. ! queue name=q4 ! autovideosink name=fbvideoend
-            #    videotee. ! queue name=q5 ! {videocoder}
-            #        ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
-            #""")
-
-
-            #fb2str = f"""
-            #    ndisrc ndi-name="{self.input_ndi_name()}" ! ndisrcdemux name=demux   
-
-            #    demux.video ! queue ! videoconvert ! tee name=videotee
-            #    demux.audio ! queue ! audioconvert ! appsink name=ndiaudioout 
-
-            #    videotee. ! queue name=q4 ! autovideosink name=fbvideoend
-            #    videotee. ! queue name=q5 ! {videocoder}
-            #        ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
-            #"""
-            
-        fb2str = f"""
-            appsrc is-live=true ! queue ! compositor.
-            appsrc is-live=true ! queue ! compositor.
-            appsrc is-live=true ! queue ! compositor.
-            appsrc is-live=true ! queue ! compositor.
-            appsrc is-live=true ! queue ! compositor.
-            appsrc is-live=true ! queue ! compositor.
-            appsrc is-live=true ! queue ! compositor.
-
-            compositor name=compositor sink_0::alpha=0.5 sink_1::alpha=0.5 ! queue ! tee name=videotee 
-
-            videotee. ! queue name=q4 ! autovideosink name=fbvideoend
-            videotee. ! queue name=q5 ! {videocoder}
-                ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
-        """
-        print(fb2str)
-
-        self.fb2=Gst.parse_launch(fb2str)
-    
-        """    videotee. ! queue name=q5 ! {videocoder}
-                ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
-        """
-
-        self.fbbus2 = self.fb2.get_bus()
-        self.fbbus2.add_signal_watch()
-        self.fbbus2.enable_sync_message_emission()
-        self.fbbus2.connect('sync-message::element', self.on_sync_message)
-        self.fbbus2.connect('message::error', self.on_error_message)
-        self.fbbus2.connect("message::eos", self.eos_handle)
-        self.fb2.set_state(Gst.State.PLAYING)
-
 
         qs = [ "q0", "q1", "q2", "q3", "qq" ] + [f"uq{i}" for i in self.sound_feedback_list()] + [f"quu{i}" for i in self.sound_feedback_list()] + [f"quuu{i}" for i in self.sound_feedback_list()]
         print(qs)
@@ -530,6 +436,23 @@ srt порты взаимодействия с клиентом:
         self.feedback_pipeline.set_state(Gst.State.PLAYING)
         self.feedback_pipeline_started = True
 
+        fb2str = f"""
+            appsrc is-live=true name=extvid ! queue ! tee name=videotee 
+            videotee. ! queue name=q4 ! autovideosink name=fbvideoend
+            videotee. ! queue name=q5 ! {videocoder}
+                ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
+        """
+        self.fb2=Gst.parse_launch(fb2str)
+        self.fbbus2 = self.fb2.get_bus()
+        self.fbbus2.add_signal_watch()
+        self.fbbus2.enable_sync_message_emission()
+        self.fbbus2.connect('sync-message::element', self.on_sync_message)
+        self.fbbus2.connect('message::error', self.on_error_message)
+        self.fbbus2.connect("message::eos", self.eos_handle)
+        self.extvid = self.fb2.get_by_name("extvid")
+        self.extvid.set_property("emit-signals", True)
+        self.fb2.set_state(Gst.State.PLAYING)
+        
         self.feedback_pipelines = [ self.feedback_pipeline, self.fb2 ]
 
     def new_sample(self, a, b):
@@ -611,6 +534,14 @@ srt порты взаимодействия с клиентом:
         self.stop_feedback_stream()
         #time.sleep(0.5)
 
+    def is_connected(self):
+        return self.common_pipeline is not None
+
+    def external_video_enabled(self):
+        return True
+
+    def send_external_video_sample(self, chno, sample):
+        self.extvid.emit("push-sample", sample)
 
 class ConnectionControllerZone(QWidget):
     def __init__(self):
@@ -650,7 +581,9 @@ class ConnectionControllerZone(QWidget):
         #print(chno, sample)
 
     def external_video_sample(self, chno, sample):
-        pass
+        for zone in self.zones:
+            if zone.is_connected() and zone.external_video_enabled(chno):
+                zone.send_external_video_sample(chno, sample)
 
     def external_audio_sample(self, chno, sample):
         pass

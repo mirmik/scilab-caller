@@ -183,8 +183,8 @@ def main():
     #Interaptor.instance().srt_disconnect.connect(srt_disconnect)
     app = QApplication(sys.argv)
     app.quitOnLastWindowClosed = False
-    #window = MainWindow()
-    window = ConnectionControllerZone()
+    window = MainWindow()
+    #window = ConnectionControllerZone()
     window.show()
     return sys.exit(app.exec())
 

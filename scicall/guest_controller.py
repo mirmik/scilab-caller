@@ -574,7 +574,6 @@ class ConnectionControllerZone(QWidget):
         self.hlayout.addWidget(self.gpuchecker)
         self.vlayout.addLayout(self.hlayout)
         self.vlayout.addWidget(self.external_zone)
-        self.gpuchecker.set(pipeline_utils.GPUType.NVIDIA)
         
         for i in range(3):
             self.add_zone(i, self)

@@ -241,9 +241,9 @@ def quiteaudio():
     return GstSubchain(src)
 
 class GPUType(str, Enum):
+    AUTOMATIC = "Автоматически",
     CPU = "Нет",
     NVIDIA = "Видеокарта nvidia",
-    AUTOMATIC = "Автоматически (тестируется)",
 
 def video_decoder_type(codertype):
     if codertype == GPUType.CPU:
@@ -269,10 +269,20 @@ class GPUChecker(QComboBox):
         for a in GPUType:
             self.addItem(a)
 
+    def automatic(self):
+        try:
+            p = Gst.parse_launch("nvh264enc")
+            p.set_state(Gst.State.PLAYING)
+            p.set_state(Gst.State.NULL)
+        except Exception as ex:
+            return GPUType.CPU
+
+        return GPUType.NVIDIA
+
     def get(self):
         text = self.currentText()
         if text == GPUType.AUTOMATIC:
-            return GPUType.NVIDIA
+            return self.automatic()
         else:
             return text
 

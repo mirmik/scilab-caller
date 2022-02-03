@@ -9,6 +9,7 @@ import time
 from scicall.display_widget import GstreamerDisplay
 import scicall.pipeline_utils as pipeline_utils
 import json
+import threading
 
 from scicall.util import (
     channel_control_port, 
@@ -23,6 +24,7 @@ from scicall.util import (
 
 class ExternalSignalPanel(QWidget):
     def __init__(self, chno, zone):
+        self.mtx = threading.RLock()
         super().__init__()
         self.zone = zone
         self.pipeline = None
@@ -69,19 +71,18 @@ class ExternalSignalPanel(QWidget):
         self.update_control()
 
     def update_control(self):
-        self.stop_pipeline()
-        self.zone.stop_external_stream()
-        self.start_pipeline()
-        self.zone.start_external_stream()
+        self.zone.start_restart_feedback_streams()
 
     def source_type(self):
-        return self.source_types_cb.currentText()
+        with self.mtx:
+            return self.source_types_cb.currentText()
 
     def stop_pipeline(self):
-        if self.pipeline:
-            self.pipeline.set_state(Gst.State.NULL)
-        time.sleep(0.1)
-        self.pipeline = None
+        print("Q")
+        with self.mtx:
+            if self.pipeline:
+                self.pipeline.set_state(Gst.State.NULL)
+            self.pipeline = None
 
     def input_ndi_name(self):
         return self.ndi_name_edit.text()
@@ -89,12 +90,15 @@ class ExternalSignalPanel(QWidget):
     def generate_pipeline_template(self):
             videocaps = pipeline_utils.global_videocaps()
             srctype = self.source_type()
+            videocoder="nvh264enc"
+            h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
+            
             if srctype == "Нет":
                 return None
             elif srctype == "Тестовый1" or srctype == "Тестовый2":
                 pattern = "" if srctype == "Тестовый1" else "pattern=snow"
                 return f"""videotestsrc {pattern} ! videoconvert ! tee name=vidtee 
-                    vidtee. ! queue name=q0 ! appsink name=videoapp
+                    vidtee. ! queue name=q0 ! {videocoder} ! {h264caps} ! appsink name=videoapp
                     vidtee. ! queue name=q1 ! autovideosink name=videoend
                 """
 
@@ -134,41 +138,42 @@ class ExternalSignalPanel(QWidget):
             
 
     def start_pipeline(self):
-        template = self.generate_pipeline_template()
-        if not template:
-            return
-
-        self.pipeline=Gst.parse_launch(template)
-        self.bus = self.pipeline.get_bus()
-        self.bus.add_signal_watch()
-        self.bus.enable_sync_message_emission()
-        self.bus.connect('sync-message::element', self.on_sync_message)
-        
-        if self.source_type() != "Нет":
-            self.pipeline.set_state(Gst.State.PLAYING)
-
-        qs = [ "q0", "q1", "q2", "q3", "q4" ] 
-        qs = [ self.pipeline.get_by_name(qname) for qname in qs ]
-        for q in qs:
-            pipeline_utils.setup_queuee(q)  
-
-        self.audioapp = self.pipeline.get_by_name("audioapp")
-        if self.audioapp:
-            self.audioapp.set_property("sync", False)
-            self.audioapp.set_property("emit-signals", True)
-            self.audioapp.set_property("max-buffers", 1)
-            self.audioapp.set_property("drop", True)
-            self.audioapp.set_property("emit-signals", True)
-            self.audioapp.connect("new-sample", self.audio_new_sample, None)
-
-        self.videoapp = self.pipeline.get_by_name("videoapp")
-        self.videoapp.set_property("sync", False)
-        self.videoapp.set_property("emit-signals", True)
-        self.videoapp.set_property("max-buffers", 1)
-        self.videoapp.set_property("drop", True)
-        self.videoapp.set_property("emit-signals", True)
-        self.videoapp.connect("new-sample", self.video_new_sample, None)
-
+        with self.mtx:
+            template = self.generate_pipeline_template()
+            if not template:
+                return
+    
+            self.pipeline=Gst.parse_launch(template)
+            self.bus = self.pipeline.get_bus()
+            self.bus.add_signal_watch()
+            self.bus.enable_sync_message_emission()
+            self.bus.connect('sync-message::element', self.on_sync_message)
+            
+            if self.source_type() != "Нет":
+                self.pipeline.set_state(Gst.State.PLAYING)
+    
+            qs = [ "q0", "q1", "q2", "q3", "q4" ] 
+            qs = [ self.pipeline.get_by_name(qname) for qname in qs ]
+            for q in qs:
+                pipeline_utils.setup_queuee(q)  
+    
+            self.audioapp = self.pipeline.get_by_name("audioapp")
+            if self.audioapp:
+                self.audioapp.set_property("sync", False)
+                self.audioapp.set_property("emit-signals", True)
+                self.audioapp.set_property("max-buffers", 1)
+                self.audioapp.set_property("drop", True)
+                self.audioapp.set_property("emit-signals", True)
+                self.audioapp.connect("new-sample", self.audio_new_sample, None)
+    
+            self.videoapp = self.pipeline.get_by_name("videoapp")
+            self.videoapp.set_property("sync", False)
+            self.videoapp.set_property("emit-signals", True)
+            self.videoapp.set_property("max-buffers", 1)
+            self.videoapp.set_property("drop", True)
+            self.videoapp.set_property("emit-signals", True)
+            self.videoapp.connect("new-sample", self.video_new_sample, None)
+    
     def audio_new_sample(self, a, b):
         sample = self.audioapp.emit("pull-sample")
         self.zone.external_audio_sample(self.chno, sample)
@@ -202,6 +207,7 @@ class ExternalSignalPanel(QWidget):
 
 class ExternalSignalsZone(QWidget):
     def __init__(self, zone):
+        self.mtx = threading.RLock()
         super().__init__()
         self.panels = []
         self.lay = QHBoxLayout()
@@ -213,3 +219,14 @@ class ExternalSignalsZone(QWidget):
         panel = ExternalSignalPanel(i, zone)
         self.panels.append(panel)
         self.lay.addWidget(panel)
+
+    def stop_streams(self):
+        print("W")
+        with self.mtx:
+            for z in self.panels:
+                z.stop_pipeline()
+
+    def start_streams(self):
+        with self.mtx:
+            for z in self.panels:
+                z.start_pipeline()

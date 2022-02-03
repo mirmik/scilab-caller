@@ -146,10 +146,14 @@ class CentralWidget(QTabWidget):
 
     def __init__(self):
         super().__init__()    	
-        self.userwdg = GuestCaller()
+        self.userwdg1 = GuestCaller()
+        self.userwdg2 = GuestCaller()
+        self.userwdg3 = GuestCaller()
         self.stantionwdg= ConnectionControllerZone()
         #self.experwdg = ExpertWidget()
-        self.addTab(Container(self.userwdg), "Гость")
+        self.addTab(Container(self.userwdg1), "Гость1")
+        self.addTab(Container(self.userwdg2), "Гость2")
+        self.addTab(Container(self.userwdg3), "Гость3")
         self.addTab(Container(self.stantionwdg), "Сервер")
         #self.addTab(Container(self.experwdg), "Тестовый")
 

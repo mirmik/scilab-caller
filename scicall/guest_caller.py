@@ -24,11 +24,13 @@ from scicall.stream_settings import (
 
 import traceback
 import scicall.pipeline_utils as pipeline_utils
+import threading
 
 class GuestCaller(QWidget):
     """ Пользовательский виджет реализует удалённой станции. """
 
     def __init__(self):
+        self.mtx = threading.RLock()
         self.IMMITATION_FLAG=False
         self.SRTLATENCY=60
         self.VIDEO_DISABLE_TEXT = "Камера(отключить)"
@@ -165,36 +167,41 @@ class GuestCaller(QWidget):
         self.feedback_pipeline = None
 
     def volume_action(self):
-        if self.common_pipeline:
-            val = self.volume_slider.value()
-            if val < 50: val = 0
-            if val > 1950: val = 2000 
-            self.common_pipeline.get_by_name("volume").set_property("volume", val/1000)
+        with self.mtx:
+            if self.common_pipeline:
+                val = self.volume_slider.value()
+                if val < 50: val = 0
+                if val > 1950: val = 2000 
+                self.common_pipeline.get_by_name("volume").set_property("volume", val/1000)
 
     def fb_volume_action(self):
-        if self.feedback_pipeline:
-            val = self.fb_volume_slider.value()
-            if val < 50: val = 0
-            if val > 1950: val = 2000
-            self.feedback_pipeline.get_by_name("fbvolume").set_property("volume", val/1000)
+        with self.mtx:
+            if self.feedback_pipeline:
+                val = self.fb_volume_slider.value()
+                if val < 50: val = 0
+                if val > 1950: val = 2000
+                self.feedback_pipeline.get_by_name("fbvolume").set_property("volume", val/1000)
 
     def opposite_ip(self):
         return self.station_ip.text()
 
     def on_client_disconnect(self):
-        self.stop_streams()
-        print("GUEST : disconnect")
-        self.connect_button.setText(self.connect_label_text)
+        with self.mtx:
+            self.stop_streams()
+            print("GUEST : disconnect")
+            self.connect_button.setText(self.connect_label_text)
 
     def on_client_connect(self):
-        self.connect_button.setText(self.disconnect_label_text)
+        with self.mtx:
+            self.connect_button.setText(self.disconnect_label_text)
 
 
     def client_ready_read(self):
-        while self.client.bytesAvailable():
-            rawdata = self.client.readLineData(1024).decode("utf-8")
-            data = json.loads(rawdata)
-            self.new_opposite_command(data)
+        with self.mtx:
+            while self.client.bytesAvailable():
+                rawdata = self.client.readLineData(1024).decode("utf-8")
+                data = json.loads(rawdata)
+                self.new_opposite_command(data)
 
     def new_opposite_command(self, data):
         print("STATION >>", data)
@@ -224,29 +231,32 @@ class GuestCaller(QWidget):
             print("unresolved command")        
 
     def remote_restart(self):
-        self.connect_action()
-        QTimer.singleShot(1000, self.connect_action)
+        with self.mtx:
+            self.connect_action()
+            QTimer.singleShot(1000, self.connect_action)
 
     def send_to_opposite(self, dct):
-        self.client.writeData(json.dumps(dct).encode("utf-8"))
+        with self.mtx:
+            self.client.writeData(json.dumps(dct).encode("utf-8"))
 
     def connect_action(self):
-        if self.client.state() == QTcpSocket.ConnectedState or self.common_pipeline:
-            self.client.disconnectFromHost()
-            self.stop_streams()
-            return 
+        with self.mtx:
+            if self.client.state() == QTcpSocket.ConnectedState or self.common_pipeline:
+                self.client.disconnectFromHost()
+                self.stop_streams()
+                return 
 
-        print("tryConnectTo server")
-        self.client.connectToHost(QHostAddress(self.opposite_ip()), channel_control_port(self.channelno()))
-        success = self.client.waitForConnected(400)
-        if success:
-            print("success")
-            self.client.disconnected.connect(self.on_disconnect)
-            self.create_keepaliver()
-        else:            
-            msgBox = QMessageBox()
-            msgBox.setText("Не удалось установить соединение с сервером. \nСервер недоступен, или запрошенный канал неактивен.")
-            msgBox.exec()
+            print("tryConnectTo server")
+            self.client.connectToHost(QHostAddress(self.opposite_ip()), channel_control_port(self.channelno()))
+            success = self.client.waitForConnected(400)
+            if success:
+                print("success")
+                self.client.disconnected.connect(self.on_disconnect)
+                self.create_keepaliver()
+            else:            
+                msgBox = QMessageBox()
+                msgBox.setText("Не удалось установить соединение с сервером. \nСервер недоступен, или запрошенный канал неактивен.")
+                msgBox.exec()
 
     def create_keepaliver(self):
         self.keepaliver = QTimer()
@@ -258,23 +268,25 @@ class GuestCaller(QWidget):
         self.send_to_opposite({"cmd": "keepalive", "ch": self.channelno()+1})
 
     def on_disconnect(self):
-        self.stop_streams()
-        self.client.disconnectFromHost()
-        
-        if self.keepaliver:
-            self.keepaliver.stop()
-            self.keepaliver = None
+        with self.mtx:
+            self.stop_streams()
+            self.client.disconnectFromHost()
+            
+            if self.keepaliver:
+                self.keepaliver.stop()
+                self.keepaliver = None
 
     def immitation_action(self):
-        if self.common_pipeline:
-            if self.client:
-                self.client.disconnectFromHost()
-            self.stop_streams()
-            return
-
-        self.IMMITATION_FLAG=True
-        self.start_common_stream()
-        self.start_feedback_stream()
+        with self.mtx:   
+            if self.common_pipeline:
+                if self.client:
+                    self.client.disconnectFromHost()
+                self.stop_streams()
+                return
+    
+            self.IMMITATION_FLAG=True
+            self.start_common_stream()
+            self.start_feedback_stream()
 
     def video_device(self):
         return self.videos[self.video_source.currentIndex()]
@@ -310,208 +322,213 @@ class GuestCaller(QWidget):
         return self.gpuchecker.get()
 
     def start_common_stream(self):
-        video_device = self.input_device(MediaType.VIDEO).to_pipeline_string()
-        audio_device = self.input_device(MediaType.AUDIO).to_pipeline_string()
-
-        videocaps = pipeline_utils.global_videocaps()
-        videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
-        srtport = channel_mpeg_stream_port(self.channelno())
-        srthost = self.station_ip.text()
-        srtlatency = self.SRTLATENCY
-
-        videoout = f"srtsink uri=srt://{srthost}:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
-        audioout = f"srtsink uri=srt://{srthost}:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
-
-        spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! videoconvert ! autovideosink name=audioend"
-        
-        if self.IMMITATION_FLAG:
-            videoout = f"srtsink uri=srt://127.0.0.1:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
-            audioout = f"srtsink uri=srt://127.0.0.1:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
-
-        audiocaps = pipeline_utils.audiocaps()
-        h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
-        pipeline_string = f"""
-            {video_device} name=cam ! video/x-raw,width=640,framerate=30/1 ! videoscale ! videoconvert ! 
-                {videocaps} ! videocompositor. 
-            videotestsrc pattern=snow name=fakevideosrc ! video/x-raw,width=640,framerate=30/1 ! textoverlay text="Нет изображения" 
-                valignment=center halignment=center font-desc="Sans, 72" ! videoconvert ! videoscale ! 
-                    {videocaps} ! videocompositor.
-            compositor name=videocompositor ! tee name=videotee
-
-            {audio_device} name=mic ! volume name=volume ! volume name=onoffvol 
-                ! tee name=audiotee 
-
-            videotee. ! queue name=q0 ! videoconvert ! {videocoder} ! 
-                {h264caps} ! 
-                     queue name=q4 ! 
-            {videoout}
+        with self.mtx:
+            video_device = self.input_device(MediaType.VIDEO).to_pipeline_string()
+            audio_device = self.input_device(MediaType.AUDIO).to_pipeline_string()
+    
+            videocaps = pipeline_utils.global_videocaps()
+            videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
+            srtport = channel_mpeg_stream_port(self.channelno())
+            srthost = self.station_ip.text()
+            srtlatency = self.SRTLATENCY
+    
+            videoout = f"srtsink uri=srt://{srthost}:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
+            audioout = f"srtsink uri=srt://{srthost}:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
+    
+            spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! spectrascope ! videoconvert ! autovideosink name=audioend"
             
-            videotee. ! queue name=q1 !videoconvert ! autovideosink name=videoend
-                        
-            {spectrogramm}
-            audiotee. ! queue name=q2 ! audioconvert ! audioresample ! {audiocaps} ! opusenc ! 
-            {audioout}
-            """
-        self.common_pipeline = Gst.parse_launch(pipeline_string)
+            if self.IMMITATION_FLAG:
+                videoout = f"srtsink uri=srt://127.0.0.1:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
+                audioout = f"srtsink uri=srt://127.0.0.1:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
+    
+            audiocaps = pipeline_utils.audiocaps()
+            h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
+            pipeline_string = f"""
+                {video_device} name=cam ! video/x-raw,width=640,framerate=30/1 ! videoscale ! videoconvert ! 
+                    {videocaps} ! videocompositor. 
+                videotestsrc pattern=snow name=fakevideosrc ! video/x-raw,width=640,framerate=30/1 ! textoverlay text="Нет изображения" 
+                    valignment=center halignment=center font-desc="Sans, 72" ! videoconvert ! videoscale ! 
+                        {videocaps} ! videocompositor.
+                compositor name=videocompositor ! tee name=videotee
+    
+                {audio_device} name=mic ! volume name=volume ! volume name=onoffvol 
+                    ! tee name=audiotee 
+    
+                videotee. ! queue name=q0 ! videoconvert ! {videocoder} ! 
+                    {h264caps} ! 
+                         queue name=q4 ! 
+                {videoout}
+                
+                videotee. ! queue name=q1 !videoconvert ! autovideosink name=videoend
+                            
+                {spectrogramm}
+                audiotee. ! queue name=q2 ! audioconvert ! audioresample ! {audiocaps} ! opusenc ! 
+                {audioout}
+                """
+            self.common_pipeline = Gst.parse_launch(pipeline_string)
 
-        qs = [ self.common_pipeline.get_by_name(qname) for qname in [
-            "q0", "q1", "q2", "q3", "q4"
-        ]]
-        for q in qs:
-            pipeline_utils.setup_queuee(q)
-
-        self.bus = self.common_pipeline.get_bus()
-        self.bus.add_signal_watch()
-        self.bus.enable_sync_message_emission()
-        self.bus.connect('sync-message::element', self.on_sync_message)
-        self.common_pipeline.set_state(Gst.State.PLAYING)
-
-        #self.fakevideosrc = pipeline_utils.imagesource("c:/users/asus/test.png")
-        self.fakevideosrc = self.common_pipeline.get_by_name("fakevideosrc")
-        self.videosrc = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("cam")) 
-        self.audiosrc = self.common_pipeline.get_by_name("mic")
-        self.vconv = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("vconv")) 
-        self.aconv = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("aconv")) 
-        self.srtout = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("srtout"))
-        self.vstub = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("lalala"))
-        self.vcompose = self.common_pipeline.get_by_name("videocompositor")
-        self.videosrc.enabled=True
-        self.audiosrc.enabled=True
-
-        self.vcompose_sink_0 = self.vcompose.get_static_pad("sink_0")
-        self.vcompose_sink_1 = self.vcompose.get_static_pad("sink_1")       
-        self.vcompose_sink_1.set_property("alpha", 0)
-
-        self.viden = True
-        self.auden = True
-        self.feed_auden = True
-        self.volume_action()
+            qs = [ self.common_pipeline.get_by_name(qname) for qname in [
+                "q0", "q1", "q2", "q3", "q4"
+            ]]
+            for q in qs:
+                pipeline_utils.setup_queuee(q)
+    
+            self.bus = self.common_pipeline.get_bus()
+            self.bus.add_signal_watch()
+            self.bus.enable_sync_message_emission()
+            self.bus.connect('sync-message::element', self.on_sync_message)
+            self.common_pipeline.set_state(Gst.State.PLAYING)
+    
+            #self.fakevideosrc = pipeline_utils.imagesource("c:/users/asus/test.png")
+            self.fakevideosrc = self.common_pipeline.get_by_name("fakevideosrc")
+            self.videosrc = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("cam")) 
+            self.audiosrc = self.common_pipeline.get_by_name("mic")
+            self.vconv = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("vconv")) 
+            self.aconv = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("aconv")) 
+            self.srtout = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("srtout"))
+            self.vstub = pipeline_utils.GstSubchain(self.common_pipeline.get_by_name("lalala"))
+            self.vcompose = self.common_pipeline.get_by_name("videocompositor")
+            self.videosrc.enabled=True
+            self.audiosrc.enabled=True
+    
+            self.vcompose_sink_0 = self.vcompose.get_static_pad("sink_0")
+            self.vcompose_sink_1 = self.vcompose.get_static_pad("sink_1")       
+            self.vcompose_sink_1.set_property("alpha", 0)
+    
+            self.viden = True
+            self.auden = True
+            self.feed_auden = True
+            self.volume_action()
 
     def start_feedback_stream(self):
-
-        videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
-
-        srthost = self.station_ip.text()
-        srtport = channel_feedback_mpeg_stream_port(self.channelno())
-        srtin0uri = f"uri=srt://{srthost}:{srtport}"
-        srtin1uri = f"uri=srt://{srthost}:{srtport+1}"
-        if self.IMMITATION_FLAG:
-            srtport = channel_mpeg_stream_port(self.channelno())
-            srtin0uri = f"uri=srt://:{srtport}"
-            srtin1uri = f"uri=srt://:{srtport+1}"
+        with self.mtx:
         
-
-        srtlatency = self.SRTLATENCY
-        audiocaps = pipeline_utils.audiocaps()
-        
-        videopart = f"""
-            srtsrc {srtin0uri} latency={srtlatency} wait-for-connection=true
-                 ! h264parse ! {videodecoder} ! videoconvert ! tee name=videotee 
-            videotee. ! queue name=q0 ! autovideosink name=fbvideoend sync=false
-        """
-
-        spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! videoconvert ! autovideosink name=fbaudioend sync=false"
-
-        audiopart = f"""
-            srtsrc {srtin1uri} latency={srtlatency} wait-for-connection=true ! 
-                opusparse ! opusdec ! {audiocaps} ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
-                    ! tee name=audiotee
-            audiotee. ! queue name=q2 ! audioconvert ! audioresample ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
-            {spectrogramm}
-        """
-
-        self.feedback_pipeline = Gst.parse_launch(f"""
-            {videopart}
-            {audiopart}
-        """)
-
-        qs = [ self.feedback_pipeline.get_by_name(qname) for qname in [
-            "q2", "q3", "q0"
-        ]]
-        for q in qs:
-            pipeline_utils.setup_queuee(q)
-                
-        self.fbbus = self.feedback_pipeline.get_bus()
-        self.fbbus.add_signal_watch()
-        self.fbbus.enable_sync_message_emission()
-        self.fbbus.connect('sync-message::element', self.on_sync_message)
-        #self.fbbus.connect('message::error', self.on_error_message)
-        #self.fbbus.connect("message::eos", self.eos_handle)
-        self.feedback_pipeline.set_state(Gst.State.PLAYING)        
-        self.fb_volume_action()
-
+            videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
+    
+            srthost = self.station_ip.text()
+            srtport = channel_feedback_mpeg_stream_port(self.channelno())
+            srtin0uri = f"uri=srt://{srthost}:{srtport}"
+            srtin1uri = f"uri=srt://{srthost}:{srtport+1}"
+            if self.IMMITATION_FLAG:
+                srtport = channel_mpeg_stream_port(self.channelno())
+                srtin0uri = f"uri=srt://:{srtport}"
+                srtin1uri = f"uri=srt://:{srtport+1}"
+            
+    
+            srtlatency = self.SRTLATENCY
+            audiocaps = pipeline_utils.audiocaps()
+            
+            videopart = f"""
+                srtsrc {srtin0uri} latency={srtlatency} wait-for-connection=true
+                     ! h264parse ! {videodecoder} ! videoconvert ! tee name=videotee 
+                videotee. ! queue name=q0 ! autovideosink name=fbvideoend sync=false
+            """
+    
+            spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! videoconvert ! autovideosink name=fbaudioend sync=false"
+    
+            audiopart = f"""
+                srtsrc {srtin1uri} latency={srtlatency} wait-for-connection=true ! 
+                    opusparse ! opusdec ! {audiocaps} ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
+                        ! tee name=audiotee
+                audiotee. ! queue name=q2 ! audioconvert ! audioresample ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
+                {spectrogramm}
+            """
+    
+            self.feedback_pipeline = Gst.parse_launch(f"""
+                {videopart}
+                {audiopart}
+            """)
+    
+            qs = [ self.feedback_pipeline.get_by_name(qname) for qname in [
+                "q2", "q3", "q0"
+            ]]
+            for q in qs:
+                pipeline_utils.setup_queuee(q)
+                    
+            self.fbbus = self.feedback_pipeline.get_bus()
+            self.fbbus.add_signal_watch()
+            self.fbbus.enable_sync_message_emission()
+            self.fbbus.connect('sync-message::element', self.on_sync_message)
+            #self.fbbus.connect('message::error', self.on_error_message)
+            #self.fbbus.connect("message::eos", self.eos_handle)
+            self.feedback_pipeline.set_state(Gst.State.PLAYING)        
+            self.fb_volume_action()
 
     def on_sync_message(self, bus, msg):
         """Биндим контрольное изображение к переданному снаружи виджету."""
         #pass
-        if msg.get_structure().get_name() == 'prepare-window-handle':
-            name = msg.src.get_parent().get_parent().name
-            if name=="videoend":
-                self.display_widget.connect_to_sink(msg.src)
-            if name=="audioend":
-                self.spectroscope_widget.connect_to_sink(msg.src)
-            if name=="fbvideoend":
-                self.feedback_display_widget.connect_to_sink(msg.src)
-            if name=="fbaudioend":
-                self.feedback_spectroscope_widget.connect_to_sink(msg.src)
+        with self.mtx:
+            if msg.get_structure().get_name() == 'prepare-window-handle':
+                name = msg.src.get_parent().get_parent().name
+                if name=="videoend":
+                    self.display_widget.connect_to_sink(msg.src)
+                if name=="audioend":
+                    self.spectroscope_widget.connect_to_sink(msg.src)
+                if name=="fbvideoend":
+                    self.feedback_display_widget.connect_to_sink(msg.src)
+                if name=="fbaudioend":
+                    self.feedback_spectroscope_widget.connect_to_sink(msg.src)
         
     def stop_common_stream(self):
-        if self.common_pipeline:
-            self.common_pipeline.set_state(Gst.State.NULL)
-        self.common_pipeline = None
+        with self.mtx:
+            if self.common_pipeline:
+                self.common_pipeline.set_state(Gst.State.NULL)
+            self.common_pipeline = None
 
     def stop_feedback_stream(self):
-        if self.feedback_pipeline:
-            self.feedback_pipeline.set_state(Gst.State.NULL)
-        self.feedback_pipeline = None        
+        with self.mtx:
+            if self.feedback_pipeline:
+                self.feedback_pipeline.set_state(Gst.State.NULL)
+            self.feedback_pipeline = None        
 
     def enable_disable_video_input(self):
-        if self.viden is True:
-            self.videosrc.set_state(Gst.State.NULL)           
-            #self.fakevideosrc.set_state(Gst.State.PLAYING)
-            self.viden = False  
-            self.vcompose_sink_0.set_property("alpha", 0)       
-            self.vcompose_sink_1.set_property("alpha", 1)
-            self.video_enable_button.setText(self.VIDEO_ENABLE_TEXT)            
-        else:
-            self.videosrc.set_state(Gst.State.PLAYING)            
-            #self.fakevideosrc.set_state(Gst.State.NULL)            
-            self.vcompose_sink_0.set_property("alpha", 1)       
-            self.vcompose_sink_1.set_property("alpha", 0)  
-            self.video_enable_button.setText(self.VIDEO_DISABLE_TEXT)
-            self.viden = True
+        with self.mtx:
+            if self.viden is True:
+                self.videosrc.set_state(Gst.State.NULL)           
+                #self.fakevideosrc.set_state(Gst.State.PLAYING)
+                self.viden = False  
+                self.vcompose_sink_0.set_property("alpha", 0)       
+                self.vcompose_sink_1.set_property("alpha", 1)
+                self.video_enable_button.setText(self.VIDEO_ENABLE_TEXT)            
+            else:
+                self.videosrc.set_state(Gst.State.PLAYING)            
+                #self.fakevideosrc.set_state(Gst.State.NULL)            
+                self.vcompose_sink_0.set_property("alpha", 1)       
+                self.vcompose_sink_1.set_property("alpha", 0)  
+                self.video_enable_button.setText(self.VIDEO_DISABLE_TEXT)
+                self.viden = True
 
     def enable_disable_audio_input(self):
-        if self.auden is True:
-            self.common_pipeline.get_by_name("onoffvol").set_property("volume", 0) 
-            self.audio_enable_button.setText(self.AUDIO_ENABLE_TEXT)              
-            self.auden = False  
-        else:
-            self.common_pipeline.get_by_name("onoffvol").set_property("volume", 1)   
-            self.audio_enable_button.setText(self.AUDIO_DISABLE_TEXT)  
-            self.auden = True
+        with self.mtx:
+            if self.auden is True:
+                self.common_pipeline.get_by_name("onoffvol").set_property("volume", 0) 
+                self.audio_enable_button.setText(self.AUDIO_ENABLE_TEXT)              
+                self.auden = False  
+            else:
+                self.common_pipeline.get_by_name("onoffvol").set_property("volume", 1)   
+                self.audio_enable_button.setText(self.AUDIO_DISABLE_TEXT)  
+                self.auden = True
 
     def enable_disable_feed_audio_input(self):
-        if self.feed_auden is True:
-            self.feedback_pipeline.get_by_name("onoffvol").set_property("volume", 0) 
-            self.feed_audio_enable_button.setText(self.OAUDIO_ENABLE_TEXT)   
-            #self.feedback_pipeline.get_by_name("asink").set_state(Gst.State.NULL)           
-            self.feed_auden = False  
-        else:
-            self.feedback_pipeline.get_by_name("onoffvol").set_property("volume", 1)   
-            self.feed_audio_enable_button.setText(self.OAUDIO_DISABLE_TEXT)  
-            #self.feedback_pipeline.get_by_name("asink").set_state(Gst.State.PLAYING)         
-            self.feed_auden = True
+        with self.mtx:
+            if self.feed_auden is True:
+                self.feedback_pipeline.get_by_name("onoffvol").set_property("volume", 0) 
+                self.feed_audio_enable_button.setText(self.OAUDIO_ENABLE_TEXT)   
+                #self.feedback_pipeline.get_by_name("asink").set_state(Gst.State.NULL)           
+                self.feed_auden = False  
+            else:
+                self.feedback_pipeline.get_by_name("onoffvol").set_property("volume", 1)   
+                self.feed_audio_enable_button.setText(self.OAUDIO_DISABLE_TEXT)  
+                #self.feedback_pipeline.get_by_name("asink").set_state(Gst.State.PLAYING)         
+                self.feed_auden = True
         
     def start_streams(self):
-        self.start_common_stream()
-        #time.sleep(0.5)
-        self.start_feedback_stream()
-        #time.sleep(0.5)
-
+        with self.mtx:
+            self.start_common_stream()
+            self.start_feedback_stream()
+        
     def stop_streams(self):
-        self.stop_common_stream()
-        #time.sleep(0.5)
-        self.stop_feedback_stream()
-        #time.sleep(0.5)
-        self.IMMITATION_FLAG = False
+        with self.mtx:
+            self.stop_common_stream()
+            self.stop_feedback_stream()
+            self.IMMITATION_FLAG = False

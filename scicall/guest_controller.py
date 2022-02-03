@@ -625,11 +625,8 @@ class ConnectionControllerZone(QWidget):
             
         with self.mtx:
             self.feedback_stream_stoped = True
-            print("A")
             self.stop_external_stream()
-            print("B")
             self.external_zone.stop_streams()
-            print("C")
             QTimer.singleShot(20, self.restart_feedback_streams_part2)
 
     def get_feedback_video_ports(self):
@@ -644,9 +641,7 @@ class ConnectionControllerZone(QWidget):
             ports = self.get_feedback_video_ports()
             self.external_zone.start_global_streams(ports)
             #self.external_zone.start_streams()
-            print("D")
             #self.start_external_stream()
-            print("E")
             self.feedback_stream_stoped = False
             
     def start_restart_feedback_streams(self):

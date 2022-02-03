@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 from gi.repository import GObject, Gst, GstVideo
 from scicall.stream_settings import MediaType
 from scicall.device_adapter import (
@@ -10,6 +11,7 @@ from scicall.device_adapter import (
     TestAudioSrcDeviceAdapter
 )
 
+NDI_DEVICE_PROVIDER = None
 PORT_BASE = 20100
 PORTS_BY_CHANNEL = 20
 MONITOR = None
@@ -125,3 +127,14 @@ def pipeline_chain(pipeline, *args):
 #    ghost_pad = Gst.GhostPad.new("sink", pad)
 #    bin.add_pad(ghost_pad)
 #    return bin
+
+def start_ndi_device_provider():
+    global NDI_DEVICE_PROVIDER
+    NDI_DEVICE_PROVIDER = Gst.DeviceProviderFactory.find("ndideviceprovider").get()
+    NDI_DEVICE_PROVIDER.start()
+
+def ndi_device_list():
+    return NDI_DEVICE_PROVIDER.get_devices()
+
+def ndi_device_list_names():
+    return [ dev.get_property("display-name") for dev in ndi_device_list() ]

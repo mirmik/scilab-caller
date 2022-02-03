@@ -2,6 +2,7 @@
 
 import gi
 import os
+import time
 gi.require_version('Gst', '1.0')
 gi.require_version('GstVideo', '1.0')
 from gi.repository import GObject, Gst, GstVideo
@@ -12,6 +13,7 @@ from scicall.guest_controller import ConnectionController, ConnectionControllerZ
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
+import scicall.util
 from enum import Enum
 import traceback
 import sys
@@ -180,7 +182,8 @@ def srt_disconnect():
 def main():
     Gst.init(sys.argv)
 #    Gst.debug_set_active(True)
-    Gst.debug_set_default_threshold(3)
+    Gst.debug_set_default_threshold(3)    
+    scicall.util.start_ndi_device_provider()
 
     #setup_interrupt_handlers()
     #Interaptor.instance().start_listen()

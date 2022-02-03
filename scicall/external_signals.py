@@ -8,6 +8,7 @@ import time
 
 from scicall.display_widget import GstreamerDisplay
 import scicall.pipeline_utils as pipeline_utils
+import scicall.util as util
 import json
 import threading
 
@@ -43,26 +44,41 @@ class ExternalSignalPanel(QWidget):
         self.inited=False
         self.make_control_panel()
 
+        self.ndi_updater = QTimer()
+        self.ndi_updater.timeout.connect(self.ndi_name_list_update)
+        self.ndi_updater.start(1000)
+        self.known_ndi_sources = set()
+
     def make_control_panel(self):
         self.source_types = ["Нет", "Тестовый1", "Тестовый2", "NDI", "SRT", "UDP"]
         self.source_types_cb = QComboBox()
         self.source_types_cb.addItems(self.source_types)
-        self.ndi_name_edit = QLineEdit()
+        self.ndi_name_list = QComboBox()
         self.control_layout = QGridLayout()
         self.control_layout.addWidget(QLabel(f"Внешний источник: {self.chno}"), 0, 0, 1, 2)
         self.control_layout.addWidget(QLabel("Тип источника:"), 1, 0)
         self.control_layout.addWidget(self.source_types_cb, 1, 1)
         self.control_layout.addWidget(QLabel("Имя (для ndi):"), 2, 0)
-        self.control_layout.addWidget(self.ndi_name_edit, 2, 1)
+        self.control_layout.addWidget(self.ndi_name_list, 2, 1)
         self.hlayout.addLayout(self.control_layout)
         self.source_types_cb.currentIndexChanged.connect(self.source_types_cb_handle)
-        self.ndi_name_edit.editingFinished.connect(self.ndi_name_text_handle)
+        #self.ndi_name_edit.editingFinished.connect(self.ndi_name_text_handle)
+
+        #self.ndi_name_list.activated.connect(self.ndi_name_list_handle)
 
         #label = QLabel()
         #label.setMinimumSize( QSize(0,0) )
         #label.setMaximumSize( QSize(16777215, 16777215) )
         #label.setSizePolicy( QSizePolicy.Expanding, QSizePolicy.Preferred );
         #self.control_layout.addWidget(label, 9,0)
+
+    def ndi_name_list_update(self):
+        check_result = set(util.ndi_device_list_names())
+        new_ndi_names = check_result.difference(self.known_ndi_sources)
+
+        for n in new_ndi_names:
+            self.known_ndi_sources.add(n)
+            self.ndi_name_list.addItem(n)
 
     def ndi_name_text_handle(self):
         self.update_control()
@@ -85,7 +101,7 @@ class ExternalSignalPanel(QWidget):
             self.pipeline = None
 
     def input_ndi_name(self):
-        return self.ndi_name_edit.text()
+        return self.ndi_name_list.currentText()
 
     def generate_pipeline_template(self):
             videocaps = pipeline_utils.global_videocaps()
@@ -176,10 +192,20 @@ class ExternalSignalPanel(QWidget):
 
     def start_global_video_feedback_pipeline(self, ports):
         with self.mtx:            
+            srctype = self.source_type()
             videocaps = pipeline_utils.global_videocaps()
             h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
             video_source = "videotestsrc"
             video_encoder = "x264enc tune=zerolatency"
+
+            if srctype == "Нет":
+                return None
+            elif srctype == "Тестовый1":
+                video_source = "videotestsrc"
+            elif srctype == "Тестовый2":
+                video_source = "videotestsrc pattern=snow"
+            elif srctype == "NDI":
+                video_source = f"ndivideosrc ndi-name={self.input_ndi_name()}"                        
 
             srtsouts = ""
             for p in ports:

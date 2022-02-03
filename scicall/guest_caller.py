@@ -433,6 +433,8 @@ class GuestCaller(QWidget):
                 audiotee. ! queue name=q2 ! audioconvert ! audioresample ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
                 {spectrogramm}
             """
+
+            audiopart=""
     
             self.feedback_pipeline = Gst.parse_launch(f"""
                 {videopart}
@@ -452,7 +454,7 @@ class GuestCaller(QWidget):
             #self.fbbus.connect('message::error', self.on_error_message)
             #self.fbbus.connect("message::eos", self.eos_handle)
             self.feedback_pipeline.set_state(Gst.State.PLAYING)        
-            self.fb_volume_action()
+            #self.fb_volume_action()
 
     def on_sync_message(self, bus, msg):
         """Биндим контрольное изображение к переданному снаружи виджету."""

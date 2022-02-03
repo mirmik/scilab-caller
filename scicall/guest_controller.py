@@ -382,6 +382,9 @@ srt порты взаимодействия с клиентом:
     def appvidsink_need_data(self, a, b):
         return Gst.FlowReturn.OK
 
+    def feedback_videoport(self):
+        return channel_feedback_mpeg_stream_port(self.channelno)
+
     def start_feedback_stream(self):
         with self.mtx:
             srtport = channel_feedback_mpeg_stream_port(self.channelno)
@@ -433,7 +436,7 @@ srt порты взаимодействия с клиентом:
             # appsrc is-live=true name=extvid
             fb2str = f"""
                 appsrc caps={h264caps} emit-signals=True name=extvid is-live=true do-timestamp=true ! queue ! tee name=videotee
-                     videotee. ! queue ! h264parse ! nvh264dec ! queue name=q4 ! autovideosink name=fbvideoend
+                     videotee. ! queue ! h264parse ! avdec_h264 ! queue name=q4 ! autovideosink name=fbvideoend
             """
  #                   videotee. ! queue !
 #                    ! srtsink  wait-for-connection=true uri=srt://:{srtport} latency={srtlatency} sync=false
@@ -629,11 +632,20 @@ class ConnectionControllerZone(QWidget):
             print("C")
             QTimer.singleShot(20, self.restart_feedback_streams_part2)
 
+    def get_feedback_video_ports(self):
+        ports = []
+        for z in self.zones:
+            if z.is_connected():
+                ports.append(z.feedback_videoport())
+        return ports
+
     def restart_feedback_streams_part2(self):
         with self.mtx:
-            self.external_zone.start_streams()
+            ports = self.get_feedback_video_ports()
+            self.external_zone.start_global_streams(ports)
+            #self.external_zone.start_streams()
             print("D")
-            self.start_external_stream()
+            #self.start_external_stream()
             print("E")
             self.feedback_stream_stoped = False
             

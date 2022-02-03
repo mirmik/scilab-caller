@@ -89,9 +89,9 @@ class ExternalSignalPanel(QWidget):
 
     def generate_pipeline_template(self):
             videocaps = pipeline_utils.global_videocaps()
-            srctype = self.source_type()
-            videocoder="nvh264enc"
             h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
+            srctype = self.source_type()
+            videocoder="x264enc tune=zerolatency"
             
             if srctype == "Нет":
                 return None
@@ -173,7 +173,42 @@ class ExternalSignalPanel(QWidget):
             self.videoapp.set_property("drop", True)
             self.videoapp.set_property("emit-signals", True)
             self.videoapp.connect("new-sample", self.video_new_sample, None)
+
+    def start_global_video_feedback_pipeline(self, ports):
+        with self.mtx:            
+            videocaps = pipeline_utils.global_videocaps()
+            h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
+            video_source = "videotestsrc"
+            video_encoder = "x264enc tune=zerolatency"
+
+            srtsouts = ""
+            for p in ports:
+                srtsouts += f" h264tee. ! queue ! srtsink latency=60 uri=srt://:{p} wait-for-connection=false sync=false \n"
+
+            template = f""" 
+                {video_source} ! videoconvert ! {videocaps} ! queue ! tee name=sourcetee
+                sourcetee. ! queue ! videoconvert ! autovideosink name=videoend
+                sourcetee. ! queue ! {video_encoder} ! {h264caps} ! tee name=h264tee
+            
+                {srtsouts}
+            """    
+
+            print(template)
+
+            self.pipeline=Gst.parse_launch(template)
+            self.bus = self.pipeline.get_bus()
+            self.bus.add_signal_watch()
+            self.bus.enable_sync_message_emission()
+            self.bus.connect('sync-message::element', self.on_sync_message)
+            
+            if self.source_type() != "Нет":
+                self.pipeline.set_state(Gst.State.PLAYING)
     
+            qs = [ "q0", "q1", "q2", "q3", "q4" ] 
+            qs = [ self.pipeline.get_by_name(qname) for qname in qs ]
+            for q in qs:
+                pipeline_utils.setup_queuee(q)  
+            
     def audio_new_sample(self, a, b):
         sample = self.audioapp.emit("pull-sample")
         self.zone.external_audio_sample(self.chno, sample)
@@ -230,3 +265,9 @@ class ExternalSignalsZone(QWidget):
         with self.mtx:
             for z in self.panels:
                 z.start_pipeline()
+
+
+    def start_global_streams(self, ports):
+        with self.mtx:
+            for z in self.panels:
+                z.start_global_video_feedback_pipeline(ports)

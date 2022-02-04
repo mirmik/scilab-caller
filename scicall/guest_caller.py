@@ -331,6 +331,8 @@ class GuestCaller(QWidget):
             srtport = channel_mpeg_stream_port(self.channelno())
             srthost = self.station_ip.text()
             srtlatency = self.SRTLATENCY
+
+            audioencoder = pipeline_utils.default_audioencoder()
     
             videoout = f"srtsink uri=srt://{srthost}:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
             audioout = f"srtsink uri=srt://{srthost}:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
@@ -362,7 +364,7 @@ class GuestCaller(QWidget):
                 videotee. ! queue name=q1 !videoconvert ! autovideosink name=videoend
                             
                 {spectrogramm}
-                audiotee. ! queue name=q2 ! audioconvert ! audioresample ! {audiocaps} ! opusenc ! 
+                audiotee. ! queue name=q2 ! audioconvert ! audioresample ! {audioencoder} ! 
                 {audioout}
                 """
             self.common_pipeline = Gst.parse_launch(pipeline_string)
@@ -415,6 +417,8 @@ class GuestCaller(QWidget):
                 srtin1uri = f"uri=srt://:{srtport+1}"
             
     
+            audioparser = pipeline_utils.default_audioparser()
+            audiodecoder = pipeline_utils.default_audiodecoder()
             srtlatency = self.SRTLATENCY
             audiocaps = pipeline_utils.audiocaps()
             
@@ -428,13 +432,13 @@ class GuestCaller(QWidget):
     
             audiopart = f"""
                 srtsrc {srtin1uri} latency={srtlatency} wait-for-connection=true ! 
-                    opusparse ! opusdec ! {audiocaps} ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
+                    {audioparser} ! {audiodecoder} ! audioconvert ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
                         ! tee name=audiotee
                 audiotee. ! queue name=q2 ! audioconvert ! audioresample ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
                 {spectrogramm}
             """
 
-            audiopart=""
+            #audiopart=""
     
             self.feedback_pipeline = Gst.parse_launch(f"""
                 {videopart}

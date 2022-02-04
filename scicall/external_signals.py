@@ -50,7 +50,7 @@ class ExternalSignalPanel(QWidget):
         self.known_ndi_sources = set()
 
     def make_control_panel(self):
-        self.source_types = ["Нет", "Тестовый1", "Тестовый2", "NDI", "SRT", "UDP"]
+        self.source_types = ["Тестовый1", "Тестовый2", "NDI"]
         self.source_types_cb = QComboBox()
         self.source_types_cb.addItems(self.source_types)
         self.ndi_name_list = QComboBox()
@@ -62,15 +62,6 @@ class ExternalSignalPanel(QWidget):
         self.control_layout.addWidget(self.ndi_name_list, 2, 1)
         self.hlayout.addLayout(self.control_layout)
         self.source_types_cb.currentIndexChanged.connect(self.source_types_cb_handle)
-        #self.ndi_name_edit.editingFinished.connect(self.ndi_name_text_handle)
-
-        #self.ndi_name_list.activated.connect(self.ndi_name_list_handle)
-
-        #label = QLabel()
-        #label.setMinimumSize( QSize(0,0) )
-        #label.setMaximumSize( QSize(16777215, 16777215) )
-        #label.setSizePolicy( QSizePolicy.Expanding, QSizePolicy.Preferred );
-        #self.control_layout.addWidget(label, 9,0)
 
     def ndi_name_list_update(self):
         check_result = set(util.ndi_device_list_names())
@@ -103,93 +94,6 @@ class ExternalSignalPanel(QWidget):
     def input_ndi_name(self):
         return self.ndi_name_list.currentText()
 
-    def generate_pipeline_template(self):
-            videocaps = pipeline_utils.global_videocaps()
-            h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
-            srctype = self.source_type()
-            videocoder="x264enc tune=zerolatency"
-            
-            if srctype == "Нет":
-                return None
-            elif srctype == "Тестовый1" or srctype == "Тестовый2":
-                pattern = "" if srctype == "Тестовый1" else "pattern=snow"
-                return f"""videotestsrc {pattern} ! videoconvert ! tee name=vidtee 
-                    vidtee. ! queue name=q0 ! {videocoder} ! {h264caps} ! appsink name=videoapp
-                    vidtee. ! queue name=q1 ! autovideosink name=videoend
-                """
-
-                """
-                    audiotestsrc ! audioconvert ! tee name=audtee 
-                    audtee. ! queue name=q2 ! appsink name=audioapp
-                    audtee. ! queue name=q3 ! spectrascope ! 
-                        videoconvert ! {videocaps} ! autovideosink name=audioend"""
-
-            
-            elif srctype == "NDI":
-                common_source = f"""
-                     ndivideosrc ndi-name="ASUS-PC19 (vMix - Output 4)" ! queue ! videoconvert 
-                        ! autovideosink name=videoend"""
-
-                return common_source                   
-            elif srctype == "SRT":
-                common_source = f"""srtsrc uri=srt://127.0.0.1:10000 do-timestamp=true latency=60 ! 
-                    queue name=q3 ! tsparse set-timestamps=true ! tsdemux name=demux"""
-                video_source = f"demux. ! queue name=q1 ! h264parse update-timecode=true ! nvh264dec"
-                audio_source = f"demux. ! queue name=q4"                     
-
-            elif srctype == "UDP":
-                common_source = f"udpsrc port=10001 do-timestamp=true ! queue ! tsparse set-timestamps=true ! tsdemux name=demux"
-                video_source = f"demux. ! queue name=q1 ! h264parse ! nvh264dec"
-                audio_source = f"fakesrc"  
-
-            return f"""
-                {common_source}
-                {video_source} ! queue name=q0 ! videoconvert ! autovideosink name=videoend
-                {audio_source} ! fakesink
-            """
-  #              {video_source} ! queue ! videoconvert ! tee name=vidtee 
- #               vidtee. ! queue ! videoconvert ! autovideosink name=videoend
-#                vidtee. ! queue ! appsink name=vidapp
-            #    {audio_source} ! queue ! audioconvert ! spectrascope ! videoconvert ! autovideosink name=audioend 
-            
-
-    def start_pipeline(self):
-        with self.mtx:
-            template = self.generate_pipeline_template()
-            if not template:
-                return
-    
-            self.pipeline=Gst.parse_launch(template)
-            self.bus = self.pipeline.get_bus()
-            self.bus.add_signal_watch()
-            self.bus.enable_sync_message_emission()
-            self.bus.connect('sync-message::element', self.on_sync_message)
-            
-            if self.source_type() != "Нет":
-                self.pipeline.set_state(Gst.State.PLAYING)
-    
-            qs = [ "q0", "q1", "q2", "q3", "q4" ] 
-            qs = [ self.pipeline.get_by_name(qname) for qname in qs ]
-            for q in qs:
-                pipeline_utils.setup_queuee(q)  
-    
-            self.audioapp = self.pipeline.get_by_name("audioapp")
-            if self.audioapp:
-                self.audioapp.set_property("sync", False)
-                self.audioapp.set_property("emit-signals", True)
-                self.audioapp.set_property("max-buffers", 1)
-                self.audioapp.set_property("drop", True)
-                self.audioapp.set_property("emit-signals", True)
-                self.audioapp.connect("new-sample", self.audio_new_sample, None)
-    
-            self.videoapp = self.pipeline.get_by_name("videoapp")
-            self.videoapp.set_property("sync", False)
-            self.videoapp.set_property("emit-signals", True)
-            self.videoapp.set_property("max-buffers", 1)
-            self.videoapp.set_property("drop", True)
-            self.videoapp.set_property("emit-signals", True)
-            self.videoapp.connect("new-sample", self.video_new_sample, None)
-
     def start_global_video_feedback_pipeline(self, ports):
         with self.mtx:            
             srctype = self.source_type()
@@ -205,21 +109,19 @@ class ExternalSignalPanel(QWidget):
             elif srctype == "Тестовый2":
                 video_source = "videotestsrc pattern=snow"
             elif srctype == "NDI":
-                video_source = f"ndivideosrc ndi-name={self.input_ndi_name()}"                        
+                video_source = f"""ndivideosrc ndi-name=\"{self.input_ndi_name()}\" ! queue name=q5"""                        
 
             srtsouts = ""
             for p in ports:
                 srtsouts += f" h264tee. ! queue ! srtsink latency=60 uri=srt://:{p} wait-for-connection=false sync=false \n"
 
             template = f""" 
-                {video_source} ! videoconvert ! {videocaps} ! queue ! tee name=sourcetee
-                sourcetee. ! queue ! videoconvert ! autovideosink name=videoend
-                sourcetee. ! queue ! {video_encoder} ! {h264caps} ! tee name=h264tee
-            
+                {video_source} ! videoconvert ! {videocaps} ! queue name=q0 ! tee name=sourcetee
+                sourcetee. ! queue name=q1 ! videoconvert ! autovideosink name=videoend
+                sourcetee. ! queue name=q2 ! {video_encoder} ! {h264caps} ! tee name=h264tee
                 {srtsouts}
-            """    
-
-            print(template)
+            """ 
+            print("template:", template)   
 
             self.pipeline=Gst.parse_launch(template)
             self.bus = self.pipeline.get_bus()
@@ -230,28 +132,10 @@ class ExternalSignalPanel(QWidget):
             if self.source_type() != "Нет":
                 self.pipeline.set_state(Gst.State.PLAYING)
     
-            qs = [ "q0", "q1", "q2", "q3", "q4" ] 
+            qs = [ "q0", "q1", "q2", "q3", "q4", "q5" ] 
             qs = [ self.pipeline.get_by_name(qname) for qname in qs ]
             for q in qs:
                 pipeline_utils.setup_queuee(q)  
-            
-    def audio_new_sample(self, a, b):
-        sample = self.audioapp.emit("pull-sample")
-        self.zone.external_audio_sample(self.chno, sample)
-        #buf = sample.get_buffer()
-        #buf.pts = Gst.CLOCK_TIME_NONE 
-        #buf.dts = Gst.CLOCK_TIME_NONE 
-        #buf.duration = Gst.CLOCK_TIME_NONE
-        return Gst.FlowReturn.OK
-
-    def video_new_sample(self, a, b):
-        sample = self.videoapp.emit("pull-sample")
-        self.zone.external_video_sample(self.chno, sample)
-        #buf = sample.get_buffer()
-        #buf.pts = Gst.CLOCK_TIME_NONE 
-        #buf.dts = Gst.CLOCK_TIME_NONE 
-        #buf.duration = Gst.CLOCK_TIME_NONE
-        return Gst.FlowReturn.OK
 
     def on_sync_message(self, bus, msg):
         if msg.get_structure().get_name() == 'prepare-window-handle':
@@ -263,8 +147,9 @@ class ExternalSignalPanel(QWidget):
 
     def showEvent(self, ev):
         if self.inited == False:
-            self.start_pipeline()
             self.inited = True
+            self.source_types_cb.setCurrentIndex(0)
+            self.start_global_video_feedback_pipeline([])
 
 class ExternalSignalsZone(QWidget):
     def __init__(self, zone):
@@ -275,6 +160,8 @@ class ExternalSignalsZone(QWidget):
         for i in range(1):
             self.add_panel(i, zone)
         self.setLayout(self.lay)
+
+        self.start_global_audio_feedback_pipeline()
 
     def add_panel(self, i, zone):
         panel = ExternalSignalPanel(i, zone)
@@ -297,3 +184,36 @@ class ExternalSignalsZone(QWidget):
         with self.mtx:
             for z in self.panels:
                 z.start_global_video_feedback_pipeline(ports)
+
+    def start_global_audio_feedback_pipeline(self):
+        audioparser = pipeline_utils.default_audioparser()
+        audiodecoder = pipeline_utils.default_audiodecoder()
+        audioencoder = pipeline_utils.default_audioencoder()
+        
+        template = f"""
+            udpsrc port=20105 ! {audioparser} ! {audiodecoder} ! audioconvert ! tee name=in1
+            udpsrc port=20125 ! {audioparser} ! {audiodecoder} ! audioconvert ! tee name=in2
+            udpsrc port=20145 ! {audioparser} ! {audiodecoder} ! audioconvert ! tee name=in3
+        
+            liveadder latency=0 name=mix1 ! {audioencoder} ! srtsink uri=srt://:20109 wait-for-connection=false
+            liveadder latency=0 name=mix2 ! {audioencoder} ! srtsink uri=srt://:20129 wait-for-connection=false
+            liveadder latency=0 name=mix3 ! {audioencoder} ! srtsink uri=srt://:20149 wait-for-connection=false
+        
+            in2. ! queue name=q21 ! mix1. 
+            in3. ! queue name=q31 ! mix1.
+
+            in1. ! queue name=q12 ! mix2. 
+            in3. ! queue name=q32 ! mix2.
+
+            in1. ! queue name=q13 ! mix3. 
+            in2. ! queue name=q23 ! mix3.
+        """
+
+        self.audio_pipeline = Gst.parse_launch(template)
+        self.audio_pipeline.set_state(Gst.State.PLAYING)
+
+        qs = [ self.audio_pipeline.get_by_name(qname) for qname in [
+            "q21", "q31", "qt12", "qt32", "q13", "q23"
+        ]]
+        #for q in qs:
+        #    pipeline_utils.setup_queuee(q)

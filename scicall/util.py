@@ -12,8 +12,6 @@ from scicall.device_adapter import (
 )
 
 NDI_DEVICE_PROVIDER = None
-PORT_BASE = 20100
-PORTS_BY_CHANNEL = 20
 MONITOR = None
 
 
@@ -76,30 +74,6 @@ def get_filtered_devices_list(mediatype, default=True, test=True):
         return get_video_captures_list(default, test)
     elif mediatype == MediaType.AUDIO:
         return [ a for a in get_audio_captures_list(default) if a.is_supported() ]
-
-def channel_video_port(ch):
-    return PORT_BASE + ch * PORTS_BY_CHANNEL + 1
-
-def channel_audio_port(ch):
-    return PORT_BASE + ch * PORTS_BY_CHANNEL + 2
-
-def channel_feedback_video_port(ch):
-    return PORT_BASE + ch * PORTS_BY_CHANNEL + 3
-
-def channel_feedback_audio_port(ch):
-    return PORT_BASE + ch * PORTS_BY_CHANNEL + 4
-
-def channel_mpeg_stream_port(ch):
-    return PORT_BASE + ch * PORTS_BY_CHANNEL + 6
-
-def channel_feedback_mpeg_stream_port(ch):
-    return PORT_BASE + ch * PORTS_BY_CHANNEL + 8
-
-def channel_control_port(ch):
-    return PORT_BASE + ch * PORTS_BY_CHANNEL + 0
-
-def internal_channel_udpspam_port(ch):
-    return PORT_BASE + ch * PORTS_BY_CHANNEL + 5
 
 def pipeline_chain(pipeline, *args):
     if pipeline is None:

@@ -11,13 +11,13 @@ import scicall.pipeline_utils as pipeline_utils
 import json
 import threading
 
-from scicall.util import (
+from scicall.ports import (
     channel_control_port, 
     channel_video_port,
     channel_audio_port, 
     channel_feedback_video_port,
     channel_feedback_audio_port,
-    internal_channel_udpspam_port,
+    internal_channel_audio_udpspam_port,
     channel_mpeg_stream_port,
     channel_feedback_mpeg_stream_port)
 
@@ -62,7 +62,7 @@ class ConnectionController(QWidget):
         self.server.newConnection.connect(self.on_server_new_connect)
         self.listener = None
 
-        self.cb_get_vmix_srt = QCheckBox("Забирать ndi(видео)")
+        #self.cb_get_vmix_srt = QCheckBox("Забирать ndi(видео)")
         self.cb_ndi_output = QCheckBox("Писать ndi поток(видео+звук)")
         self.cb_ndi_output.setChecked(True)
 
@@ -89,7 +89,7 @@ class ConnectionController(QWidget):
         self.control_layout.addWidget(self.srtlatency_edit)
         self.control_layout.addStretch()
 
-        self.control_layout2.addWidget(self.cb_get_vmix_srt)
+        #self.control_layout2.addWidget(self.cb_get_vmix_srt)
         self.control_layout2.addWidget(self.cb_ndi_output)
         self.control_layout2.addStretch()
 
@@ -115,6 +115,9 @@ class ConnectionController(QWidget):
         self.sample_controller=None
         self.feedback_pipeline_started = False
 
+    def get_audioend(self):
+        return self.feedback_spectroscope
+
     def input_ndi_name(self):
         return self.port_srt_vmix_edit.text()
 
@@ -122,12 +125,32 @@ class ConnectionController(QWidget):
         return int(self.srtlatency_edit.text())
 
     def make_checkboxes_for_sound_feedback(self):
+        self.volume_retrans_audio = []
         for i in range(3):
             wdg = QCheckBox("Ретранс. звука: " + str(i+1))
             if self.channelno != i: wdg.setChecked(True)
             self.control_layout.addWidget(wdg)
             self.audio_feedback_checkboxes.append(wdg)
+            self.volume_retrans_audio.append(wdg)
+            wdg.stateChanged.connect(self.update_volume_helper)
+        extwdg = QCheckBox("Внешн. звук ")
+        self.control_layout.addWidget(extwdg)
+        self.audio_feedback_checkboxes.append(extwdg)
+        self.volume_external_audio = extwdg
+        extwdg.stateChanged.connect(self.update_volume_helper)
 
+    def update_volume_helper(self):
+        self.update_volume()
+
+    def update_volume(self):
+        for i in range(len(self.volume_retrans_audio)):
+            enabled = self.volume_retrans_audio[i].isChecked()
+            volume = 1 if enabled else 0
+            self.zone.set_volume(i, self.channelno, volume)
+        extenabled = self.volume_external_audio.isChecked()
+        extvolume = 1 if extenabled else 0
+        self.zone.set_volume("e", self.channelno, extvolume)        
+        
     def sound_feedback_list(self):
         ret=[]
         for i in range(3):
@@ -218,6 +241,8 @@ srt порты взаимодействия с клиентом:
             print("unresolved command")        
 
     def send_to_opposite(self, dct):
+        if len(self.clients) == 0:
+            return
         client = self.clients[0]
         client.writeData((json.dumps(dct) + "\n").encode("utf-8"))
         client.flush()
@@ -258,8 +283,8 @@ srt порты взаимодействия с клиентом:
         srtport = channel_mpeg_stream_port(self.channelno)
         srtlatency = self.get_srt_latency()
 
-        audiocaps = pipeline_utils.audiocaps()
-        udpspam = internal_channel_udpspam_port(self.channelno)
+        audiocaps = pipeline_utils.global_audiocaps()
+        udpspam = internal_channel_audio_udpspam_port(self.channelno)
 
         ndisink = f"ndisink ndi-name={self.ndi_name()}"
         if not self.cb_ndi_output.isChecked():
@@ -343,7 +368,6 @@ class ConnectionControllerZone(QWidget):
         self.mtx = threading.RLock()
         super().__init__()
         self.zones = []
-        self.external_zone = ExternalSignalsZone(self)
         self.vlayout = QVBoxLayout()
         self.hlayout = QHBoxLayout()
         self.gpuchecker = pipeline_utils.GPUChecker()
@@ -351,13 +375,20 @@ class ConnectionControllerZone(QWidget):
         self.hlayout.addWidget(QLabel("Использовать аппаратное ускорение: "))
         self.hlayout.addWidget(self.gpuchecker)
         self.vlayout.addLayout(self.hlayout)
-        self.vlayout.addWidget(self.external_zone)
         
         for i in range(3):
             self.add_zone(i, self)
-            #self.zones[i].enable_disable_clicked()
+
+        self.external_zone = ExternalSignalsZone(self)
+        
+        self.vlayout.addWidget(self.external_zone)
+        for wdg in self.zones:
+            self.vlayout.addWidget(wdg)
 
         self.setLayout(self.vlayout)
+
+        for wdg in self.zones:
+            wdg.update_volume()
 
     def get_gpu_type(self):
         return self.gpuchecker.get()
@@ -365,26 +396,6 @@ class ConnectionControllerZone(QWidget):
     def add_zone(self, i, zone):
         wdg = ConnectionController(i, zone)
         self.zones.append(wdg)
-        self.vlayout.addWidget(wdg)
-
-    def push_sample(self, sample, chno):
-        for z in self.zones:
-            z.push_sample(sample, chno)
-
-    def new_sample_external_channel(self, chno, sample):
-        pass
-        #print(chno, sample)
-
-    def external_video_sample(self, chno, sample):
-        if self.feedback_stream_stoped:
-            return
-
-        for zone in self.zones:
-            zone.send_external_video_sample(chno, sample)
-
-    def external_audio_sample(self, chno, sample):
-        if self.feedback_stream_stoped:
-            return
         
     def restart_feedback_streams(self):
         with self.mtx:
@@ -408,3 +419,10 @@ class ConnectionControllerZone(QWidget):
     def start_restart_feedback_streams(self):
         with self.mtx:
             QTimer.singleShot(2, self.restart_feedback_streams)
+
+    def get_audioends(self):
+        return [ z.get_audioend() for z in self.zones ]
+
+    def set_volume(self, f, t, val):
+        self.external_zone.set_volume(f,t,val)
+        print("set_volume", f, t, val)

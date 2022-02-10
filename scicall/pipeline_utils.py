@@ -115,7 +115,7 @@ def global_videocaps():
     #return "video/x-raw"
     return "video/x-raw,width=640,height=480,framerate=30/1"
 
-def audiocaps():
+def global_audiocaps():
     #return "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
     return "audio/x-raw,format=S16LE,layout=interleaved,rate=24000,channels=1"
 

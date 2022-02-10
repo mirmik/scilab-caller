@@ -8,14 +8,13 @@ import time
 
 from scicall.display_widget import GstreamerDisplay
 from scicall.util import get_video_captures_list, get_audio_captures_list
-from scicall.util import (
-    channel_control_port, 
-    channel_video_port, 
-    channel_audio_port,
+
+from scicall.ports import (
     channel_feedback_video_port,
-    channel_feedback_audio_port,
+    channel_control_port, 
+    channel_audio_port,
     channel_mpeg_stream_port,
-    channel_feedback_mpeg_stream_port
+    channel_feedback_mpeg_stream_port,
 )
 
 from scicall.stream_settings import (
@@ -343,7 +342,7 @@ class GuestCaller(QWidget):
                 videoout = f"srtsink uri=srt://127.0.0.1:{srtport} wait-for-connection=true latency={srtlatency} sync=false"
                 audioout = f"srtsink uri=srt://127.0.0.1:{srtport+1} wait-for-connection=true latency={srtlatency} sync=false"
     
-            audiocaps = pipeline_utils.audiocaps()
+            audiocaps = pipeline_utils.global_audiocaps()
             h264caps = "video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au,framerate=30/1"
             pipeline_string = f"""
                 {video_device} name=cam ! video/x-raw,width=640,framerate=30/1 ! videoscale ! videoconvert ! 
@@ -420,7 +419,7 @@ class GuestCaller(QWidget):
             audioparser = pipeline_utils.default_audioparser()
             audiodecoder = pipeline_utils.default_audiodecoder()
             srtlatency = self.SRTLATENCY
-            audiocaps = pipeline_utils.audiocaps()
+            audiocaps = pipeline_utils.global_audiocaps()
             
             videopart = f"""
                 srtsrc {srtin0uri} latency={srtlatency} wait-for-connection=true

@@ -11,16 +11,7 @@ import scicall.pipeline_utils as pipeline_utils
 import json
 import threading
 
-from scicall.ports import (
-    channel_control_port, 
-    channel_video_port,
-    channel_audio_port, 
-    channel_feedback_video_port,
-    channel_feedback_audio_port,
-    internal_channel_audio_udpspam_port,
-    channel_mpeg_stream_port,
-    channel_feedback_mpeg_stream_port)
-
+from scicall.ports import *
 from scicall.external_signals import ExternalSignalPanel
 from scicall.external_signals import ExternalSignalsZone
 
@@ -63,12 +54,12 @@ class ConnectionController(QWidget):
         self.listener = None
 
         #self.cb_get_vmix_srt = QCheckBox("Забирать ndi(видео)")
-        self.cb_ndi_output = QCheckBox("Писать ndi поток(видео+звук)")
+        self.cb_ndi_output = QCheckBox("Конвертировать в ndi поток")
         self.cb_ndi_output.setChecked(True)
 
         self.common_channel_cb = QCheckBox("Прямой канал:")
         self.feedback_channel_cb = QCheckBox("Обратный канал:")
-        self.srtlatency_edit = QLineEdit("125")
+        self.srtlatency_edit = QLineEdit("80")
         self.common_channel_cb.setChecked(True)
         self.feedback_channel_cb.setChecked(True)
 
@@ -93,9 +84,9 @@ class ConnectionController(QWidget):
         self.control_layout2.addWidget(self.cb_ndi_output)
         self.control_layout2.addStretch()
 
-        self.layout.addWidget(self.spectroscope)
         self.layout.addWidget(self.display)
-        self.layout.addWidget(self.feedback_spectroscope)
+        self.layout.addWidget(self.spectroscope)
+        #self.layout.addWidget(self.feedback_spectroscope)
         self.layout.addLayout(self.info_layout)
         self.layout.addLayout(self.control_layout)
         self.layout.addLayout(self.control_layout2)
@@ -143,13 +134,30 @@ class ConnectionController(QWidget):
         self.update_volume()
 
     def update_volume(self):
+        self.send_volumes_instruction()
+
+    def guest_volumes_array(self):
+        arr = []
         for i in range(len(self.volume_retrans_audio)):
             enabled = self.volume_retrans_audio[i].isChecked()
             volume = 1 if enabled else 0
-            self.zone.set_volume(i, self.channelno, volume)
+            arr.append(volume)
+        return arr
+
+    def external_volumes_array(self):
+        arr = []
         extenabled = self.volume_external_audio.isChecked()
         extvolume = 1 if extenabled else 0
-        self.zone.set_volume("e", self.channelno, extvolume)        
+        arr.append(extvolume)
+        return arr
+
+    def send_volumes_instruction(self):
+        dct = {
+            "cmd" : "set_volumes",
+            "guest_channels" : self.guest_volumes_array(),
+            "external_channels" : self.external_volumes_array()
+        }
+        self.send_to_opposite(dct)
         
     def sound_feedback_list(self):
         ret=[]
@@ -229,13 +237,18 @@ srt порты взаимодействия с клиентом:
             time.sleep(0.2)
 
             if self.common_channel_cb.isChecked():
-                self.start_common_stream()
+                #self.start_common_stream()
                 self.send_to_opposite({"cmd": "start_common_stream"})
 
             time.sleep(0.2)
 
             if self.feedback_channel_cb.isChecked():
-                self.send_to_opposite({"cmd": "start_feedback_stream"})
+                self.send_to_opposite({
+                    "cmd": "start_feedback_stream",
+                    "count_of_guests" : 3,
+                    "count_of_externals" : 1
+                })
+                self.send_volumes_instruction()
                 self.zone.start_restart_feedback_streams()
         else:
             print("unresolved command")        
@@ -259,10 +272,13 @@ srt порты взаимодействия с клиентом:
                 self.stop_control_server()
                 self.enable_disable_button.setText("Включить канал")
                 self.runned = False
+                self.cb_ndi_output.setEnabled(True)
             else:
                 self.start_control_server()
+                self.start_common_stream()
                 self.enable_disable_button.setText("Отключить канал")
                 self.runned = True
+                self.cb_ndi_output.setEnabled(False)
             self.update_info()
         except Exception as ex:
             traceback.print_exc()
@@ -281,6 +297,7 @@ srt порты взаимодействия с клиентом:
         videodecoder = pipeline_utils.video_decoder_type(self.get_gpu_type())
         videocoder = pipeline_utils.video_coder_type(self.get_gpu_type())
         srtport = channel_mpeg_stream_port(self.channelno)
+        audio_mirror_port = channel_audio_mirror_port(self.channelno)
         srtlatency = self.get_srt_latency()
 
         audiocaps = pipeline_utils.global_audiocaps()
@@ -304,14 +321,15 @@ srt порты взаимодействия с клиентом:
             t1. ! queue name=qt0 ! videoconvert ! autovideosink sync=false name=videoend
             t2. ! queue name=qt1 !audioconvert ! spectrascope ! videoconvert ! 
                 autovideosink sync=false name=audioend
-            opusin. ! queue name=qt4 ! udpsink host=127.0.0.1 port={udpspam}
 
             t1. ! queue ! videoconvert ! combiner.
             t2. ! queue ! audioconvert ! audioresample ! combiner.
             ndisinkcombiner name=combiner ! {ndisink} 
+
+            opusin. ! queue name=qt5 ! srtsink uri=srt://:{audio_mirror_port} wait-for-connection=false latency={srtlatency}
         """)
         qs = [ self.common_pipeline.get_by_name(qname) for qname in [
-            "q0", "q2", "qt0", "qt1", "qt2", "qt3", "qt4"
+            "q0", "q2", "qt0", "qt1", "qt2", "qt3", "qt4", "qt5"
         ]]
         for q in qs:
             pipeline_utils.setup_queuee(q)
@@ -378,6 +396,8 @@ class ConnectionControllerZone(QWidget):
         
         for i in range(3):
             self.add_zone(i, self)
+            self.zones[-1].enable_disable_clicked()
+            self.zones[-1].enable_disable_button.setEnabled(False)
 
         self.external_zone = ExternalSignalsZone(self)
         
@@ -423,6 +443,6 @@ class ConnectionControllerZone(QWidget):
     def get_audioends(self):
         return [ z.get_audioend() for z in self.zones ]
 
-    def set_volume(self, f, t, val):
-        self.external_zone.set_volume(f,t,val)
-        print("set_volume", f, t, val)
+    #def set_volume(self, f, t, val):
+    #    self.external_zone.set_volume(f,t,val)
+    #    print("set_volume", f, t, val)

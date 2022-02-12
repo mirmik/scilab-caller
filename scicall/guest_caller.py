@@ -9,14 +9,7 @@ import time
 from scicall.display_widget import GstreamerDisplay
 from scicall.util import get_video_captures_list, get_audio_captures_list
 
-from scicall.ports import (
-    channel_feedback_video_port,
-    channel_control_port, 
-    channel_audio_port,
-    channel_mpeg_stream_port,
-    channel_feedback_mpeg_stream_port,
-)
-
+from scicall.ports import *
 from scicall.stream_settings import (
     MediaType,
 )
@@ -85,13 +78,13 @@ class GuestCaller(QWidget):
         self.fb_volume_slider.sliderMoved.connect(self.fb_volume_action)
 
         self.gpuchecker = pipeline_utils.GPUChecker()
-        self.imitation_label_text = "Запуск без установки соединения (тест оборудования)"
+        #self.imitation_label_text = "Запуск без установки соединения (тест оборудования)"
         self.stop_immitation_label_text = "Остановить"
         self.connect_label_text = "Установить соединение"
         self.disconnect_label_text = "Разорвать соединение"
         self.connect_button = QPushButton(self.connect_label_text)
 
-        self.immitation_button = QPushButton(self.imitation_label_text)
+        #self.immitation_button = QPushButton(self.imitation_label_text)
 
         self.main_layout = QHBoxLayout()
         self.left_layout = QVBoxLayout()
@@ -120,7 +113,7 @@ class GuestCaller(QWidget):
         self.control_layout.addWidget(self.audio_source, 3, 1)
         self.control_layout.addWidget(self.gpuchecker, 6, 1)
         self.control_layout.addWidget(self.connect_button, 8, 0, 1, 2)
-        self.control_layout.addWidget(self.immitation_button, 7, 0, 1, 2)
+        #self.control_layout.addWidget(self.immitation_button, 7, 0, 1, 2)
 
         label = QLabel()
         label.setMinimumSize( QSize(0,0) )
@@ -160,7 +153,7 @@ class GuestCaller(QWidget):
         self.client.disconnected.connect(self.on_client_disconnect)
         self.client.readyRead.connect(self.client_ready_read)
         self.connect_button.clicked.connect(self.connect_action)
-        self.immitation_button.clicked.connect(self.immitation_action)
+        #self.immitation_button.clicked.connect(self.immitation_action)
 
         self.common_pipeline = None
         self.feedback_pipeline = None
@@ -179,7 +172,7 @@ class GuestCaller(QWidget):
                 val = self.fb_volume_slider.value()
                 if val < 50: val = 0
                 if val > 1950: val = 2000
-                self.feedback_pipeline.get_by_name("fbvolume").set_property("volume", val/1000)
+                self.fast_feedback_pipeline.get_by_name("fbvolume").set_property("volume", val/1000)
 
     def opposite_ip(self):
         return self.station_ip.text()
@@ -213,9 +206,11 @@ class GuestCaller(QWidget):
             time.sleep(0.2)
             self.start_common_stream()
         elif cmd == "start_feedback_stream":
-            print("START_FEEDBACK_STREAM")
+            self.guest_channels_count = data["count_of_guests"]
+            self.external_channels_count = data["count_of_externals"]
             time.sleep(0.2)
             self.start_feedback_stream()
+            self.start_fast_feedback_audiostream()
         elif cmd == "set_srtlatency":
             self.SRTLATENCY = data["data"] 
         elif cmd == "client_collision":
@@ -224,6 +219,8 @@ class GuestCaller(QWidget):
             msgBox.exec()         
         elif cmd == "remote_restart":
             self.remote_restart()
+        elif cmd == "set_volumes":
+            self.set_mixer_volumes(guests=data["guest_channels"], externals=data["external_channels"])
         elif cmd == "keepalive":
             pass
         else:
@@ -426,24 +423,8 @@ class GuestCaller(QWidget):
                      ! h264parse ! {videodecoder} ! videoconvert ! tee name=videotee 
                 videotee. ! queue name=q0 ! autovideosink name=fbvideoend sync=false
             """
-    
-            spectrogramm = "audiotee. ! queue name=q3 ! audioconvert ! audioresample ! spectrascope ! videoconvert ! autovideosink name=fbaudioend sync=false"
-    
-            audiopart = f"""
-                srtsrc {srtin1uri} latency={srtlatency} wait-for-connection=true ! 
-                    {audioparser} ! {audiodecoder} ! audioconvert ! volume volume=1 name=fbvolume ! volume volume=1 name=onoffvol 
-                        ! tee name=audiotee
-                audiotee. ! queue name=q2 ! audioconvert ! audioresample ! autoaudiosink sync=false ts-offset=-2000000000 name=asink
-                {spectrogramm}
-            """
+            self.feedback_pipeline = Gst.parse_launch(videopart)
 
-            #audiopart=""
-    
-            self.feedback_pipeline = Gst.parse_launch(f"""
-                {videopart}
-                {audiopart}
-            """)
-    
             qs = [ self.feedback_pipeline.get_by_name(qname) for qname in [
                 "q2", "q3", "q0"
             ]]
@@ -454,10 +435,65 @@ class GuestCaller(QWidget):
             self.fbbus.add_signal_watch()
             self.fbbus.enable_sync_message_emission()
             self.fbbus.connect('sync-message::element', self.on_sync_message)
-            #self.fbbus.connect('message::error', self.on_error_message)
-            #self.fbbus.connect("message::eos", self.eos_handle)
             self.feedback_pipeline.set_state(Gst.State.PLAYING)        
-            #self.fb_volume_action()
+            
+    def start_fast_feedback_audiostream(self):
+        with self.mtx:
+            audioparser = pipeline_utils.default_audioparser()
+            audiodecoder = pipeline_utils.default_audiodecoder()
+            srtlatency = self.SRTLATENCY
+            audiocaps = pipeline_utils.global_audiocaps()
+            srthost = self.station_ip.text()
+
+
+            audio_mirror_ports = [ channel_audio_mirror_port(i) for i in range(self.guest_channels_count) ]   
+            guests_srturi = [ f"uri=srt://{srthost}:{port}" for port in audio_mirror_ports ]
+
+            external_audio_ports = [ external_mirror_audio_port(i) for i in range(self.external_channels_count) ]   
+            externals_srturi = [ f"uri=srt://{srthost}:{port}" for port in external_audio_ports ]
+
+            spectrogramm = """audiotee. ! queue name=q3 ! audioconvert ! audioresample ! 
+                spectrascope ! videoconvert ! autovideosink name=fbaudioend sync=false"""
+            audiosinkout = """
+                audiotee. ! queue name=q2 ! audioconvert ! audioresample !
+                    volume volume=1 name=onoffvol ! volume volume=1 name=fbvolume ! 
+                        autoaudiosink sync=false ts-offset=-2000000000 name=asink                
+            """
+            template = f"""
+                liveadder latency=0 name=mix ! audioconvert ! queue name=q4 ! tee name=audiotee 
+                {spectrogramm}
+                {audiosinkout}
+            """
+            for i in range(self.guest_channels_count):
+                template += f"""
+                    srtsrc {guests_srturi[i]} do-timestamp=true latency={srtlatency} wait-for-connection=true ! 
+                        {audioparser} ! {audiodecoder} ! volume volume=1 name=guest_volume{i} ! queue name=qi{i} ! mix.
+                """
+            for i in range(self.external_channels_count):
+                template += f"""
+                    srtsrc {externals_srturi[i]} do-timestamp=true latency={srtlatency} wait-for-connection=true ! 
+                        {audioparser} ! {audiodecoder} ! volume volume=1 name=external_volume{i} ! queue name=qe{i} ! mix.
+                """
+            
+
+            self.fast_feedback_pipeline = Gst.parse_launch(template)
+            qs = [ self.fast_feedback_pipeline.get_by_name(qname) for qname in [
+                "q2", "q3", "q0", "q4"
+            ] +
+            [ f"qi{i}" for i in range(10) ] +
+            [ f"qe{i}" for i in range(10) ]
+            ]
+            for q in qs:
+                pipeline_utils.setup_queuee(q)
+
+            self.guest_volumes = [ self.fast_feedback_pipeline.get_by_name(f"guest_volume{i}") for i in range(self.guest_channels_count) ]
+            self.external_volumes = [ self.fast_feedback_pipeline.get_by_name(f"external_volume{i}") for i in range(self.external_channels_count) ]
+                    
+            bus = self.fast_feedback_pipeline.get_bus()
+            bus.add_signal_watch()
+            bus.enable_sync_message_emission()
+            bus.connect('sync-message::element', self.on_sync_message)
+            self.fast_feedback_pipeline.set_state(Gst.State.PLAYING)      
 
     def on_sync_message(self, bus, msg):
         """Биндим контрольное изображение к переданному снаружи виджету."""
@@ -485,6 +521,12 @@ class GuestCaller(QWidget):
             if self.feedback_pipeline:
                 self.feedback_pipeline.set_state(Gst.State.NULL)
             self.feedback_pipeline = None        
+
+    def stop_fast_feedback_stream(self):
+        with self.mtx:
+            if self.fast_feedback_pipeline:
+                self.fast_feedback_pipeline.set_state(Gst.State.NULL)
+            self.fast_feedback_pipeline = None        
 
     def enable_disable_video_input(self):
         with self.mtx:
@@ -517,12 +559,12 @@ class GuestCaller(QWidget):
     def enable_disable_feed_audio_input(self):
         with self.mtx:
             if self.feed_auden is True:
-                self.feedback_pipeline.get_by_name("onoffvol").set_property("volume", 0) 
+                self.fast_feedback_pipeline.get_by_name("onoffvol").set_property("volume", 0) 
                 self.feed_audio_enable_button.setText(self.OAUDIO_ENABLE_TEXT)   
                 #self.feedback_pipeline.get_by_name("asink").set_state(Gst.State.NULL)           
                 self.feed_auden = False  
             else:
-                self.feedback_pipeline.get_by_name("onoffvol").set_property("volume", 1)   
+                self.fast_feedback_pipeline.get_by_name("onoffvol").set_property("volume", 1)   
                 self.feed_audio_enable_button.setText(self.OAUDIO_DISABLE_TEXT)  
                 #self.feedback_pipeline.get_by_name("asink").set_state(Gst.State.PLAYING)         
                 self.feed_auden = True
@@ -531,9 +573,18 @@ class GuestCaller(QWidget):
         with self.mtx:
             self.start_common_stream()
             self.start_feedback_stream()
+            self.start_fast_feedback_audiostream()
         
     def stop_streams(self):
         with self.mtx:
             self.stop_common_stream()
             self.stop_feedback_stream()
+            self.stop_fast_feedback_stream()
             self.IMMITATION_FLAG = False
+
+    def set_mixer_volumes(self, guests, externals):
+        for i in range(len(guests)):
+            self.guest_volumes[i].set_property("volume", guests[i])
+
+        for i in range(len(externals)):
+            self.external_volumes[i].set_property("volume", externals[i])

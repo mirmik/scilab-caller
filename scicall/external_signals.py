@@ -12,22 +12,13 @@ import scicall.util as util
 import json
 import threading
 
-from scicall.ports import (
-    channel_control_port, 
-    channel_video_port,
-    channel_audio_port, 
-    channel_feedback_video_port,
-    channel_feedback_audio_port,
-    internal_channel_audio_udpspam_port,
-    channel_mpeg_stream_port,
-    channel_feedback_mpeg_stream_port
-)
-
+from scicall.ports import *
 
 class ExternalSignalPanel(QWidget):
     def __init__(self, chno, zone):
         self.mtx = threading.RLock()
         super().__init__()
+        self.srtlatency = 80
         self.zone = zone
         self.pipeline = None
         self.chno = chno
@@ -38,8 +29,8 @@ class ExternalSignalPanel(QWidget):
         #self.displayout = QHBoxLayout()
         self.hlayout = QHBoxLayout()
         self.layout = QVBoxLayout()
-        self.layout.addWidget(self.viddisp)
-        self.layout.addWidget(self.auddisp)
+        self.hlayout.addWidget(self.viddisp)
+        self.hlayout.addWidget(self.auddisp)
         self.hlayout.addLayout(self.layout)
         self.setLayout(self.hlayout)
         self.inited=False
@@ -55,6 +46,7 @@ class ExternalSignalPanel(QWidget):
         self.source_types_cb = QComboBox()
         self.source_types_cb.addItems(self.source_types)
         self.ndi_name_list = QComboBox()
+        self.ndi_name_list.addItem("---")
         self.control_layout = QGridLayout()
         self.control_layout.addWidget(QLabel(f"Внешний источник: {self.chno}"), 0, 0, 1, 2)
         self.control_layout.addWidget(QLabel("Тип источника:"), 1, 0)
@@ -63,6 +55,7 @@ class ExternalSignalPanel(QWidget):
         self.control_layout.addWidget(self.ndi_name_list, 2, 1)
         self.hlayout.addLayout(self.control_layout)
         self.source_types_cb.currentIndexChanged.connect(self.source_types_cb_handle)
+        self.ndi_name_list.currentIndexChanged.connect(self.ndi_name_text_handle)
 
     def ndi_name_list_update(self):
         check_result = set(util.ndi_device_list_names())
@@ -97,12 +90,11 @@ class ExternalSignalPanel(QWidget):
 
     def global_audio_external_template(self):
         srctype = self.source_type()
-        audiocaps = pipeline_utils.global_audiocaps()
         audio_source = "audiotestsrc"
+        audiocaps = pipeline_utils.global_audiocaps()
         audioparser = pipeline_utils.default_audioparser()
-        audiodecoder = pipeline_utils.default_audiodecoder()
         audioencoder = pipeline_utils.default_audioencoder()
-        #audio_encoder = "x264enc tune=zerolatency"
+        audio_output_port = external_mirror_audio_port(self.chno)
 
         if srctype == "Нет":
             return None
@@ -111,17 +103,17 @@ class ExternalSignalPanel(QWidget):
         elif srctype == "Тестовый2":
             audio_source = "audiotestsrc is-live=true"
         elif srctype == "NDI":
-            audio_source = f"""ndiaudiosrc do-timestamp=true timeout=0 ndi-name=\"{self.input_ndi_name()}\" ! audioresample ! audioconvert ! queue name=qa5"""                        
+            audio_source = f"""ndiaudiosrc do-timestamp=true timestamp-mode=2 timeout=0 ndi-name=\"{self.input_ndi_name()}\" ! audioresample ! audioconvert ! queue name=qa5"""                        
 
+        spectrascope = f"""audiotee. ! queue name=qa1 ! audioconvert ! spectrascope ! 
+            videoconvert ! autovideosink name=audioend""" 
+        srtout = f"""audiotee. ! queue name=qa2 ! {audioencoder} ! 
+                srtsink uri=srt://:{audio_output_port} wait-for-connection=false latency={self.srtlatency}"""
         template = f""" 
             {audio_source} ! audioconvert ! queue name=qa0 ! tee name=audiotee 
-            audiotee. ! queue name=qa1 ! audioconvert ! spectrascope ! 
-                videoconvert ! autovideosink name=audioend
-            audiotee. ! queue name=qa2 ! {audioencoder} ! udpsink host=127.0.0.1 port=20190
+            {spectrascope}
+            {srtout}
         """ 
-
-        """
-        """
         return template
 
     def start_global_video_feedback_pipeline(self, ports):
@@ -139,13 +131,12 @@ class ExternalSignalPanel(QWidget):
             elif srctype == "Тестовый2":
                 video_source = "videotestsrc pattern=snow is-live=true"
             elif srctype == "NDI":
-                video_source = f"""ndivideosrc do-timestamp=true timeout=0 ndi-name=\"{self.input_ndi_name()}\" ! queue name=q5"""                        
+                video_source = f"""ndivideosrc do-timestamp=true timestamp-mode=2 timeout=0 ndi-name=\"{self.input_ndi_name()}\" ! queue name=q5"""                        
 
             srtsouts = ""
             for p in ports:
                 srtsouts += f" h264tee. ! queue ! srtsink latency=60 uri=srt://:{p} wait-for-connection=false sync=false \n"
             external_source_substring = self.global_audio_external_template()
-            #external_source_substring = ""
             template = f""" 
                 {video_source} ! videoconvert ! {videocaps} ! queue name=q0 ! tee name=sourcetee
                 sourcetee. ! queue name=q1 ! videoconvert ! autovideosink name=videoend
@@ -153,8 +144,6 @@ class ExternalSignalPanel(QWidget):
                 {srtsouts}
                 {external_source_substring}
             """ 
-            print("template:", template)   
-
             self.pipeline=Gst.parse_launch(template)
             self.bus = self.pipeline.get_bus()
             self.bus.add_signal_watch()
@@ -192,7 +181,7 @@ class ExternalSignalsZone(QWidget):
         for i in range(1):
             self.add_panel(i, zone)
         self.setLayout(self.lay)
-        self.start_global_audio_feedback_pipeline(zone.get_audioends())
+        #self.start_global_audio_feedback_pipeline(zone.get_audioends())
         self.zone = zone
 
     def add_panel(self, i, zone):
@@ -227,87 +216,90 @@ class ExternalSignalsZone(QWidget):
     def channels_count(self):
         return 3
 
-    def set_volume(self, f, t, val):
-        name = f"v_{f}{t}"
-        print(name, val)
-        self.audio_pipeline.get_by_name(name).set_property("volume", val)
+    #def set_volume(self, f, t, val):
+        #name = f"v_{f}{t}"
+        #print(name, val)
+        #self.audio_pipeline.get_by_name(name).set_property("volume", val)
 
-    def start_global_audio_feedback_pipeline(self, audioends):
-        self.audioends = audioends
-        audioparser = pipeline_utils.default_audioparser()
-        audiodecoder = pipeline_utils.default_audiodecoder()
-        audioencoder = pipeline_utils.default_audioencoder()
+    # def start_global_audio_feedback_pipeline(self, audioends):
+    #     self.audioends = audioends
+    #     audioparser = pipeline_utils.default_audioparser()
+    #     audiodecoder = pipeline_utils.default_audiodecoder()
+    #     audioencoder = pipeline_utils.default_audioencoder()
+    #     audiocaps = pipeline_utils.global_audiocaps()
+    #     srtlatency=80
         
-        N=self.channels_count()
-        udpspam_ports = [ internal_channel_audio_udpspam_port(i) for i in range(N) ]
-        srtports = [ channel_feedback_audio_port(i) for i in range(N) ]
+    #     N=self.channels_count()
+    #     udpspam_ports = [ internal_channel_audio_udpspam_port(i) for i in range(N) ]
+    #     srtports = [ channel_feedback_audio_port(i) for i in range(N) ]
         
-        template_a = ""
-        for i in range(N):
-            template_a += f"""
-              udpsrc port={udpspam_ports[i]} ! {audioparser} ! {audiodecoder} ! audioconvert ! tee name=in{i}
-              liveadder latency=0 name=mix{i} ! queue name=before_t{i} ! tee name=t{i} ! queue name=after0_t{i} ! {audioencoder} ! srtsink uri=srt://:{srtports[i]} wait-for-connection=false
-              t{i}. ! queue name=after1_t{i} ! audioconvert ! spectrascope ! videoconvert ! autovideosink name=audiofeed{i}
-            """
+    #     template_a = ""
+    #     for i in range(N):
+    #         template_a += f"""
+    #           udpsrc port={udpspam_ports[i]} ! {audioparser} ! {audiodecoder} ! audioconvert ! tee name=in{i}
+    #           liveadder latency=0 name=mix{i} ! audioconvert ! {audiocaps} ! queue name=before_t{i} ! 
+    #             tee name=t{i} ! queue name=after0_t{i} ! {audioencoder} ! srtsink uri=srt://:{srtports[i]} wait-for-connection=false latency={srtlatency}
+    #           t{i}. ! queue name=after1_t{i} ! audioconvert ! spectrascope ! videoconvert ! autovideosink name=audiofeed{i}
+    #         """
 
-        external_source_substring = f"""
-            udpsrc port=20190 ! {audioparser} ! {audiodecoder} ! audioconvert ! tee name=externaltee
-        """
+    #     external_source_substring = f"""
+    #         udpsrc port=20190 ! {audioparser} ! {audiodecoder} ! audioconvert ! tee name=externaltee
+    #     """
 
-        outpart = f"""
-            in0.         ! volume volume=0 name=v_00 ! queue name=q00 ! mix0. 
-            in1.         ! volume volume=0 name=v_10 ! queue name=q10 ! mix0. 
-            in2.         ! volume volume=0 name=v_20 ! queue name=q20 ! mix0. 
-            externaltee. ! volume volume=0 name=v_e0 ! queue name=qe0 ! mix0.
+    #     outpart = f"""
+    #         in0.         ! volume volume=0 name=v_00 ! queue name=q00 ! mix0. 
+    #         in1.         ! volume volume=0 name=v_10 ! queue name=q10 ! mix0. 
+    #         in2.         ! volume volume=0 name=v_20 ! queue name=q20 ! mix0. 
+    #         externaltee. ! volume volume=0 name=v_e0 ! queue name=qe0 ! mix0.
 
-            in0.         ! volume volume=0 name=v_01 ! queue name=q01 ! mix1. 
-            in1.         ! volume volume=0 name=v_11 ! queue name=q11 ! mix1. 
-            in2.         ! volume volume=0 name=v_21 ! queue name=q21 ! mix1.
-            externaltee. ! volume volume=0 name=v_e1 ! queue name=qe1 ! mix1.
+    #         in0.         ! volume volume=0 name=v_01 ! queue name=q01 ! mix1. 
+    #         in1.         ! volume volume=0 name=v_11 ! queue name=q11 ! mix1. 
+    #         in2.         ! volume volume=0 name=v_21 ! queue name=q21 ! mix1.
+    #         externaltee. ! volume volume=0 name=v_e1 ! queue name=qe1 ! mix1.
 
-            in0.         ! volume volume=0 name=v_02 ! queue name=q02 ! mix2. 
-            in1.         ! volume volume=0 name=v_12 ! queue name=q12 ! mix2. 
-            in2.         ! volume volume=0 name=v_22 ! queue name=q22 ! mix2.
-            externaltee. ! volume volume=0 name=v_e2 ! queue name=qe2 ! mix2.
-        """
+    #         in0.         ! volume volume=0 name=v_02 ! queue name=q02 ! mix2. 
+    #         in1.         ! volume volume=0 name=v_12 ! queue name=q12 ! mix2. 
+    #         in2.         ! volume volume=0 name=v_22 ! queue name=q22 ! mix2.
+    #         externaltee. ! volume volume=0 name=v_e2 ! queue name=qe2 ! mix2.
+    #     """
 
-        #outpart = ""
+    #     #outpart = ""
 
-        # TODO переписать для случая N каналов.
-        template = f"""
-            {template_a}
-            {external_source_substring}
+    #     # TODO переписать для случая N каналов.
+    #     template = f"""
+    #         {template_a}
+    #         {external_source_substring}
 
-            {outpart}
-        """
+    #         {outpart}
+    #     """
 
-        print(template)
+    #     print(template)
 
-        self.audio_pipeline = Gst.parse_launch(template)
-        self.bus = self.audio_pipeline.get_bus()
-        self.bus.add_signal_watch()
-        self.bus.enable_sync_message_emission()
-        self.bus.connect('sync-message::element', self.on_sync_message)
-        self.audio_pipeline.set_state(Gst.State.PLAYING)
+    #     self.audio_pipeline = Gst.parse_launch(template)
+    #     self.bus = self.audio_pipeline.get_bus()
+    #     self.bus.add_signal_watch()
+    #     self.bus.enable_sync_message_emission()
+    #     self.bus.connect('sync-message::element', self.on_sync_message)
+    #     self.audio_pipeline.set_state(Gst.State.PLAYING)
 
-        qs = [ qname for qname in [
-            "q0", "q1",
-        ] + 
-        [f"before_t{i}" for i in range(N)] +
-        [f"after0_t{i}" for i in range(N)] +
-        [f"after1_t{i}" for i in range(N)]
-        ]
+    #     qs = [ qname for qname in [
+    #         "q0", "q1",
+    #     ] + 
+    #     [f"before_t{i}" for i in range(N)] +
+    #     [f"after0_t{i}" for i in range(N)] +
+    #     [f"after1_t{i}" for i in range(N)]
+    #     ]
 
-        for i in range(N):
-            for j in range(N):
-                qs += [f"q{i}{j}"]
+    #     for i in range(N):
+    #         for j in range(N):
+    #             qs += [f"q{i}{j}"]
 
-        for j in range(N):
-            qs += [f"qe{j}"]
+    #     for j in range(N):
+    #         qs += [f"qe{j}"]
 
-        #print(qs)
-        #for q in qs:
-        #    pipeline_utils.setup_queuee(self.audio_pipeline.get_by_name(q))  
+    #     #print(qs)
+    #     #for q in qs:
+    #     #    pipeline_utils.setup_queuee(self.audio_pipeline.get_by_name(q))  
 
     def on_sync_message(self, bus, msg):
         print("ON_sync_message")

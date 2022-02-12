@@ -142,7 +142,7 @@ def default_audioparser():
 
 def default_audioencoder():
     if default_audiocodec() == "opus":
-        return "opusenc"
+        return "opusenc frame-size=20 perfect-timestamp=true"
     elif default_audiocodec() == "aac":
         return "faac"
 

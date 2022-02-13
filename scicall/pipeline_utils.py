@@ -80,6 +80,7 @@ def video_coder_type(codertype):
 def get_gpu_type():
     return GPUType.NVIDIA
 
+ISNVIDIA = None 
 class GPUChecker(QComboBox):
     def __init__(self):
         super().__init__()
@@ -88,11 +89,18 @@ class GPUChecker(QComboBox):
             self.addItem(a)
 
     def automatic(self):
+        global ISNVIDIA
+        if ISNVIDIA is False:
+            return GPUType.CPU
+        if ISNVIDIA is True:
+            return GPUType.NVIDIA
         try:
             p = Gst.parse_launch("nvh264enc")
             p.set_state(Gst.State.PLAYING)
             p.set_state(Gst.State.NULL)
+            ISNVIDIA=True
         except Exception as ex:
+            ISNVIDIA=False
             return GPUType.CPU
 
         return GPUType.NVIDIA

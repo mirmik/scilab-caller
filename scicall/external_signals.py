@@ -149,6 +149,7 @@ class ExternalSignalPanel(QWidget):
             self.bus.add_signal_watch()
             self.bus.enable_sync_message_emission()
             self.bus.connect('sync-message::element', self.on_sync_message)
+            self.bus.connect('sync-message', self.on_sync_message)
             
             if self.source_type() != "Нет":
                 self.pipeline.set_state(Gst.State.PLAYING)
@@ -159,12 +160,13 @@ class ExternalSignalPanel(QWidget):
                 pipeline_utils.setup_queuee(q)  
 
     def on_sync_message(self, bus, msg):
-        if msg.get_structure().get_name() == 'prepare-window-handle':
-            name = msg.src.get_parent().get_parent().name
-            if name=="videoend":
-                self.viddisp.connect_to_sink(msg.src)
-            if name=="audioend":
-                self.auddisp.connect_to_sink(msg.src)
+        with self.mtx:        
+            if msg.get_structure().get_name() == 'prepare-window-handle':
+                name = msg.src.get_parent().get_parent().name
+                if name=="videoend":
+                    self.viddisp.connect_to_sink(msg.src)
+                if name=="audioend":
+                    self.auddisp.connect_to_sink(msg.src)
 
     def showEvent(self, ev):
         if self.inited == False:

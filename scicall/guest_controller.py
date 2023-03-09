@@ -358,8 +358,11 @@ srt порты взаимодействия с клиентом:
     def on_sync_message(self, bus, msg):
         """Биндим контрольное изображение к переданному снаружи виджету."""
         #pass
+        print("ON_SYNC_MESSAGE")
         with self.mtx:
             if msg.get_structure().get_name() == 'prepare-window-handle':
+                print("DFASDFSDFSADGSADGSDFSADFSADFSADFSADFDSAFASFD")
+                print("PREPARE_WINDOW_HANDLE", msg.src.get_parent().get_parent().name)
                 name = msg.src.get_parent().get_parent().name
                 if name=="videoend":
                     self.display.connect_to_sink(msg.src)
